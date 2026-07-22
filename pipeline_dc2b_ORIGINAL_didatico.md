@@ -121,6 +121,12 @@ Note que o par (Desastres, Danos Elétricos) tem $L$ mais alto — mas isso **n�
 
 ## 5. O oráculo: MAP guloso para DPP — cardinalidade fixa $N$
 
+**O que é um "oráculo" nesse contexto:** aqui também é o componente que traduz os scores estimados (agora via Thompson Sampling, Etapas 2-3, combinados na matriz $L$ da Etapa 4) numa decisão concreta de pacote. A diferença central em relação aos outros dois documentos: o objetivo que o oráculo maximiza não é mais uma soma de scores — é o **determinante** de uma submatriz de $L$, uma quantidade geométrica (o "volume" ocupado pelos itens escolhidos no espaço de features).
+
+**Por que ainda é "guloso":** encontrar o subconjunto de tamanho $N$ que maximiza $\det(L_S)$ exatamente também é caro computacionalmente. A solução prática — chamada de **MAP guloso para DPP** (*maximum a posteriori* do processo pontual determinantal) — constrói o conjunto item por item, adicionando a cada passo o item que mais aumenta o determinante do conjunto parcial, exatamente na mesma lógica greedy dos outros dois documentos, só que aplicada a uma função objetivo diferente.
+
+**O que essa escolha de oráculo permite (e não permite) fazer:** como o determinante de uma matriz de Gram é uma função submodular do conjunto (retornos marginais decrescentes conforme os itens ficam mais parecidos), o greedy tem garantias de aproximação bem estabelecidas na literatura de inferência para DPP. Mas — e essa é a limitação estrutural que já discutimos — como o objetivo é puramente geométrico (baseado em $S_{ij}$, a similaridade fixa entre coberturas), o oráculo só sabe "afastar" itens parecidos entre si; ele não tem como representar que duas coberturas parecidas às vezes convertem melhor juntas (sinergia real) — só existe o mecanismo de empurrar para longe, nunca de aproximar por benefício aprendido.
+
 **Analogia:** o DPP atribui uma "probabilidade" a cada conjunto possível de coberturas, proporcional ao determinante de $L$ restrito àquele conjunto. Conjuntos com itens muito parecidos entre si têm determinante baixo (quase "achatado", sem volume) — o oráculo busca o conjunto de tamanho $N$ com o maior volume possível.
 
 **A matemática:**

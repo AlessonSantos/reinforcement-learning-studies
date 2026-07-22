@@ -122,6 +122,12 @@ Abaixo do morno — sinal de canibalização (sobreposição de sinistro entre o
 
 ## 5. O oráculo guloso: montando a mala item por item
 
+**O que é um "oráculo" nesse contexto (antes de entrar na matemática):** em bandits combinatórios, chama-se de **oráculo** o componente que resolve o problema de decisão — dado os scores estimados de cada cobertura (e de cada par), o oráculo escolhe o pacote que maximiza a função de recompensa. É chamado assim porque o resto do algoritmo (a parte que estima $\theta$ e $\phi$ via UCB, nas Etapas 3 e 4) não precisa saber como o oráculo decide por dentro — só precisa entregar a ele os scores e receber de volta um pacote. Essa separação é o que permite trocar a função de recompensa ou as restrições de negócio sem mexer em nada da parte estatística: é exatamente essa flexibilidade que motivou a escolha do C²UCB desde o início da nossa conversa.
+
+Como testar todas as combinações possíveis de coberturas seria computacionalmente inviável à medida que o catálogo cresce (o número de subconjuntos cresce exponencialmente), o oráculo raramente resolve o problema de forma exata — ele costuma ser uma **heurística aproximada**. O **oráculo guloso** é a forma mais comum: em vez de testar todas as combinações, ele constrói o pacote item por item, adicionando a cada passo o candidato que mais aumenta a recompensa, até algum critério de parada.
+
+**O papel específico dele na nossa versão:** aqui o critério de parada não é um tamanho fixo — é o próprio **ganho marginal** ($\Delta$) ficando menor ou igual a zero. Isso é o que permite ao pacote crescer ou encolher dinamicamente por cliente, sem nenhum $k$ pré-definido. Vale uma ressalva honesta: a prova formal de aproximação $(1-1/e)$ do greedy clássico (que veremos no documento do C²UCB original) vale para funções de recompensa submodulares e monótonas sob cardinalidade fixa — como a nossa função permite termos negativos (canibalização) e não tem cardinalidade fixa, o guloso aqui é uma heurística muito usada e razoável na prática, mas sem essa garantia formal exata (discutimos isso em detalhe mais cedo na conversa).
+
 **Analogia:** montar uma mala de viagem, peça por peça — só que a peça entra na mala se ela vale a pena tanto sozinha quanto em conjunto com o que já está ali dentro.
 
 **A matemática:** $S_{parcial}$ começa vazio. A cada passo:
@@ -130,15 +136,79 @@ $$\Delta(i \mid S_{parcial}) = \Big(p_{UCB}(i) - 0{,}5\Big) \;+\; \sum_{j \in S_
 
 Escolhe-se $i^{\ast} = \arg\max_i \Delta(i\mid S_{parcial})$. Se $\Delta(i^{\ast})>0$, adiciona e repete; se $\Delta(i^{\ast})\le 0$, para.
 
-**O exemplo rodando:**
+**O exemplo rodando — tabela completa de scores:**
 
-$$\Delta(\text{Desastres} \mid \emptyset) = 0{,}73-0{,}5 = 0{,}23 > 0 \Rightarrow \text{adiciona}$$
+Antes de rodar o guloso, o modelo já calculou (Etapas 3 e 4) o score $p_{UCB}$ individual de cada uma das 5 coberturas candidatas, e o score $p_{UCB}^{par}$ de todos os pares relevantes entre elas. Eis a tabela completa:
 
-$$\Delta(\text{Danos Elétricos} \mid \{\text{Desastres}\}) = (0{,}68-0{,}5)+(0{,}33-0{,}5) = 0{,}01$$
+**Scores individuais:**
 
-Quase zero — a canibalização quase anula o valor individual.
+| Cobertura | $p_{UCB}(i)$ |
+|---|---|
+| Desastres Naturais | 0,73 |
+| Danos Elétricos | 0,68 |
+| Roubo e Furto | 0,60 |
+| Conteúdo Residencial | 0,58 |
+| Incêndio | 0,52 |
 
-**O que entra / o que sai:** entra: $p_{UCB}(i)$ e $p_{UCB}^{par}(i,j)$ de todos os candidatos. Sai: o pacote final $S_{ofertado}$.
+**Scores de par** (todas as combinações entre as 5 coberturas):
+
+| Par | $p_{UCB}^{par}(i,j)$ |
+|---|---|
+| Desastres × Danos Elétricos | 0,33 (canibalização — sobreposição de sinistro) |
+| Desastres × Roubo | 0,35 |
+| Desastres × Conteúdo | 0,30 |
+| Desastres × Incêndio | 0,40 |
+| Danos Elétricos × Roubo | 0,58 |
+| Danos Elétricos × Conteúdo | 0,45 |
+| Danos Elétricos × Incêndio | 0,45 |
+| Roubo × Conteúdo | 0,65 (sinergia — proteção complementar) |
+| Roubo × Incêndio | 0,50 |
+
+Com essa tabela em mãos, o guloso roda assim:
+
+**Passo 1 — $S_{parcial}=\emptyset$.** Sem nenhum par formado ainda, $\Delta(i\mid\emptyset) = p_{UCB}(i)-0{,}5$ para cada candidato:
+
+| Candidato | $\Delta(i\mid\emptyset)$ |
+|---|---|
+| **Desastres Naturais** | **0,23** |
+| Danos Elétricos | 0,18 |
+| Roubo e Furto | 0,10 |
+| Conteúdo Residencial | 0,08 |
+| Incêndio | 0,02 |
+
+Maior $\Delta$: Desastres Naturais. Adiciona. $S_{parcial}=\{\text{Desastres}\}$.
+
+**Passo 2 — $S_{parcial}=\{\text{Desastres}\}$.** Agora cada candidato soma seu score individual à interação com Desastres:
+
+| Candidato | $p_{UCB}(i)-0{,}5$ | $p_{UCB}^{par}(i,\text{Desastres})-0{,}5$ | $\Delta$ total |
+|---|---|---|---|
+| **Danos Elétricos** | 0,18 | $0{,}33-0{,}5=-0{,}17$ | **0,01** |
+| Roubo e Furto | 0,10 | $0{,}35-0{,}5=-0{,}15$ | −0,05 |
+| Incêndio | 0,02 | $0{,}40-0{,}5=-0{,}10$ | −0,08 |
+| Conteúdo Residencial | 0,08 | $0{,}30-0{,}5=-0{,}20$ | −0,12 |
+
+Mesmo com a canibalização quase anulando seu valor individual, Danos Elétricos ainda tem o maior $\Delta$ (0,01 — os demais já viraram negativos por causa da baixa interação com Desastres). Adiciona. $S_{parcial}=\{\text{Desastres}, \text{Danos Elétricos}\}$.
+
+**Passo 3 — $S_{parcial}=\{\text{Desastres}, \text{Danos Elétricos}\}$.** Cada candidato agora soma duas interações:
+
+| Candidato | $p_{UCB}(i)-0{,}5$ | par c/ Desastres | par c/ Danos Elétricos | $\Delta$ total |
+|---|---|---|---|---|
+| **Roubo e Furto** | 0,10 | −0,15 | $0{,}58-0{,}5=0{,}08$ | **0,03** |
+| Incêndio | 0,02 | −0,10 | $0{,}45-0{,}5=-0{,}05$ | −0,13 |
+| Conteúdo Residencial | 0,08 | −0,20 | $0{,}45-0{,}5=-0{,}05$ | −0,17 |
+
+Roubo e Furto é o único com $\Delta>0$ (0,03 — a boa interação com Danos Elétricos compensa a fraca interação com Desastres). Adiciona. $S_{parcial}=\{\text{Desastres}, \text{Danos Elétricos}, \text{Roubo}\}$.
+
+**Passo 4 — $S_{parcial}=\{\text{Desastres}, \text{Danos Elétricos}, \text{Roubo}\}$.** Verifica os 2 candidatos restantes, agora com três interações cada:
+
+| Candidato | $p_{UCB}(i)-0{,}5$ | par c/ Desastres | par c/ Danos Elétricos | par c/ Roubo | $\Delta$ total |
+|---|---|---|---|---|---|
+| Conteúdo Residencial | 0,08 | −0,20 | −0,05 | $0{,}65-0{,}5=0{,}15$ | **−0,02** |
+| Incêndio | 0,02 | −0,10 | −0,05 | $0{,}50-0{,}5=0{,}00$ | **−0,13** |
+
+Mesmo a sinergia de Conteúdo com Roubo (0,65, a maior da tabela) não é suficiente para compensar sua má interação com Desastres e Danos Elétricos — $\Delta$ fica negativo para os dois candidatos restantes. **O guloso para aqui.**
+
+**O que entra / o que sai:** entra: $p_{UCB}(i)$ e $p_{UCB}^{par}(i,j)$ de todos os candidatos. Sai: o pacote final $S_{ofertado} = \{\text{Desastres Naturais}, \text{Danos Elétricos}, \text{Roubo e Furto}\}$ — três coberturas, não porque um $k$ fixo mandou parar em 3, mas porque foi exatamente onde o ganho marginal esgotou.
 
 ---
 
@@ -201,7 +271,45 @@ $$y_{ij} = \begin{cases} 1 & \text{se ambos } i,j \in S_{final} \\ 0 & \text{se 
 
 $$\hat\theta = \arg\max_\theta \sum_{n=1}^{N} \Big[y_n \log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\|\theta\|^2, \qquad p_n=\sigma(\theta^Tx_n)$$
 
-**De onde vem essa fórmula:** ela nasce da regra de Bayes — posterior $\propto$ verossimilhança $\times$ prior. A verossimilhança de uma observação binária segue uma distribuição de Bernoulli, $p_n^{y_n}(1-p_n)^{1-y_n}$; somando o logaritmo dessa verossimilhança para as $N$ observações e somando o logaritmo do prior gaussiano em $\theta$ (que vira exatamente o termo $-\frac{\lambda}{2}\|\theta\|^2$), chega-se na expressão acima. Diferente da ridge regression (onde essa mesma lógica — minimizar erro quadrático + penalização — leva a uma equação **linear** em $\theta$, resolvível por inversão direta de matriz, $\hat\theta=V^{-1}b$), aqui $p_n=\sigma(\theta^Tx_n)$ entra **dentro do logaritmo** de forma não-linear. Por isso a maximização não tem solução fechada e precisa de um otimizador iterativo (o `scipy.optimize.minimize` no código) — é exatamente essa diferença que discutimos como o motivo de a regressão logística não permitir a atualização somável da ridge regression.
+**De onde vem essa fórmula, passo a passo:**
+
+O ponto de partida é a **regra de Bayes**, aplicada a $\theta$ em vez de a um evento simples:
+
+$$\underbrace{P(\theta \mid \text{dados})}_{\text{posteriori}} \;\propto\; \underbrace{P(\text{dados} \mid \theta)}_{\text{verossimilhança}} \;\times\; \underbrace{P(\theta)}_{\text{priori}}$$
+
+| Termo | O que significa aqui |
+|---|---|
+| **Priori** $P(\theta)$ | o que acreditávamos sobre $\theta$ **antes** de ver qualquer dado — no nosso caso, $\theta \sim \mathcal{N}(0, \lambda^{-1}I)$: um "chute" de que os valores de $\theta$ tendem a ficar perto de zero, com $\lambda$ controlando o quão fortemente essa crença é mantida |
+| **Verossimilhança** $P(\text{dados}\mid\theta)$ | o quão prováveis são os dados observados, **assumindo** um valor particular de $\theta$ — é a peça que faz o modelo "aprender" a partir dos dados |
+| **Posteriori** $P(\theta\mid\text{dados})$ | a crença atualizada sobre $\theta$, depois de combinar o que já se sabia (priori) com o que os dados mostraram (verossimilhança) — é essa distribuição que queremos maximizar para achar $\hat\theta$ |
+
+**Passo 1 — a verossimilhança de uma única observação.** Como $y_n \in \{0,1\}$, cada observação segue uma distribuição de **Bernoulli** com parâmetro $p_n$ (a probabilidade de $y_n=1$). A fórmula fechada de uma Bernoulli é:
+
+$$P(y_n \mid \theta) = p_n^{\,y_n}\,(1-p_n)^{\,1-y_n}$$
+
+Repare no truque dessa fórmula: se $y_n=1$, o expoente de $(1-p_n)$ vira zero, então $(1-p_n)^0=1$ e sobra só $p_n$; se $y_n=0$, o expoente de $p_n$ vira zero e sobra só $(1-p_n)$. Ou seja, essa única expressão cobre os dois casos possíveis ao mesmo tempo.
+
+**Passo 2 — a verossimilhança de todas as $N$ observações juntas.** Assumindo que cada observação é independente das demais (dado $\theta$), a verossimilhança conjunta é o **produto** das verossimilhanças individuais:
+
+$$P(\text{dados}\mid\theta) = \prod_{n=1}^{N} p_n^{\,y_n}(1-p_n)^{\,1-y_n}$$
+
+**Passo 3 — passar para o logaritmo.** Produtos de números entre 0 e 1 ficam numericamente instáveis (tendem a zero rapidinho) e são difíceis de derivar. Como $\log$ é uma função crescente, maximizar a verossimilhança é o mesmo que maximizar o **logaritmo** da verossimilhança — e o logaritmo transforma o produto em soma:
+
+$$\log P(\text{dados}\mid\theta) = \sum_{n=1}^{N} \log\Big(p_n^{\,y_n}(1-p_n)^{\,1-y_n}\Big) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big]$$
+
+(usando a propriedade $\log(a^k)=k\log a$ e $\log(ab)=\log a + \log b$).
+
+**Passo 4 — o logaritmo da priori.** A densidade de uma gaussiana $\mathcal{N}(0,\lambda^{-1}I)$ é $\propto \exp\big(-\frac{\lambda}{2}\|\theta\|^2\big)$. Tomando o logaritmo, a parte que depende de $\theta$ é exatamente:
+
+$$\log P(\theta) = -\frac{\lambda}{2}\|\theta\|^2 + \text{constante (não depende de }\theta\text{)}$$
+
+**Passo 5 — somar as duas partes.** Como $\log(\text{verossimilhança}\times\text{priori}) = \log(\text{verossimilhança}) + \log(\text{priori})$, e a constante não muda onde fica o máximo, o log da posteriori (a menos de constante) é:
+
+$$\log P(\theta\mid\text{dados}) \;\propto\; \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\|\theta\|^2$$
+
+Maximizar essa expressão em $\theta$ é exatamente a fórmula do início desta seção — o $\hat\theta$ resultante é chamado de estimativa **MAP** (*maximum a posteriori*: o valor de $\theta$ mais provável dado o que já foi observado e o que já se acreditava antes).
+
+**Por que isso não tem solução fechada (diferente da ridge regression):** no C²UCB original, a mesma lógica de Bayes (verossimilhança gaussiana em vez de Bernoulli, ver a derivação equivalente no documento do C²UCB original) leva a uma expressão **quadrática** em $\theta$, cuja derivada é linear — dá para isolar $\theta$ algebricamente. Aqui, $p_n=\sigma(\theta^Tx_n)$ entra **dentro do logaritmo** através de uma função não-linear (o sigmoid), então a derivada de $\log P(\theta\mid\text{dados})$ em relação a $\theta$ não é linear em $\theta$ — não dá para isolar $\theta$ com álgebra simples. É por isso que a maximização precisa de um otimizador iterativo (`scipy.optimize.minimize` no código, usando o gradiente $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$) em vez de uma única inversão de matriz.
 
 Aqui $\lambda$ aparece como o termo $-\frac{\lambda}{2}\|\theta\|^2$: uma penalização que cresce conforme $\theta$ se afasta de zero. Na prática, isso impede que $\hat\theta$ "dispare" para valores extremos quando os dados são escassos ou quando uma cobertura é aceita/rejeitada de forma quase unânime (o cenário de quase-separação que motiva boa parte desta etapa) — sem essa penalização, a otimização poderia tentar empurrar $\theta$ ao infinito para explicar perfeitamente um padrão determinístico nos dados.
 
@@ -319,7 +427,7 @@ Tudo que apareceu nas equações acima com uma letra grega ou um nome fixo é um
 
 | Parâmetro | Onde aparece | O que controla | Ponto de partida sugerido |
 |---|---|---|---|
-| $\lambda$ (regularização) | Etapas 0 e 9 | O quanto $\theta$ e $\phi$ ficam "presos" perto de zero antes de haver evidência forte — protege contra estimativas explosivas com poucos dados ou padrões quase determinísticos | Testar valores entre 0,5 e 2,0; pode (e provavelmente deve) ser diferente para $\theta$ e para $\phi$ |
+| $\lambda$ (regularização) | Etapas 0 e 9 | O quanto $\theta$ e $\phi$ ficam "presos" perto de zero antes de haver evidência forte — protege contra estimativas explosivas com poucos dados ou padrões quase determinísticos | Testar valores entre 0,5 e 2,0; pode (e provavelmente deve) ser diferente para $\theta$ e para $\phi$ — faz sentido, por exemplo, o modelo de par ter um $\lambda_\phi$ maior, já que ele tem muito mais parâmetros para estimar (91 pares, com 14 coberturas) a partir da mesma quantidade de dados que o modelo de item, precisando de uma regularização mais forte para não overfitar |
 | $\alpha$ (peso de exploração) | Etapas 3 e 4 | O quanto o bônus de incerteza pesa na decisão final — maior $\alpha$ = mais disposição a testar combinações pouco vistas, mesmo com estimativa pontual baixa | Começar mais alto (ex.: 1,5–2,0) na fase inicial e reduzir gradualmente conforme o histórico cresce |
 | $\tau$ (piso de curvatura) | Etapa 9 | Evita que itens/pares "quase certos" parem de reduzir incerteza (o efeito kappa) | Algo entre 0,02 e 0,10 (referência: $p(1-p)$ tem máximo 0,25 em $p=0{,}5$) |
 | Frequência de reajuste (tamanho do lote) | Etapa 9 | De quanto em quanto tempo (ou a cada quantos clientes) o histórico completo é reprocessado | Diário costuma ser suficiente para o volume esperado; pode ser ajustado conforme o tráfego real |

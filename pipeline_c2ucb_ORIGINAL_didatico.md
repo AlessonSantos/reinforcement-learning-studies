@@ -116,6 +116,12 @@ $$h(\{\text{Incêndio}\}) = 0, \qquad h(\{\text{Incêndio}, \text{Desastres}\}) 
 
 ## 4. O oráculo guloso: cardinalidade fixa $k$
 
+**O que é um "oráculo" nesse contexto:** é o componente do algoritmo que, recebendo os scores UCB estimados (Etapa 2) e o regularizador de diversidade (Etapa 3), decide qual conjunto de coberturas oferecer. O nome vem do fato de que o oráculo é tratado como uma "caixa-preta" do ponto de vista da parte estatística do algoritmo — o LinUCB não precisa saber como o pacote é montado, só precisa fornecer os scores; é essa separação que permite ao C²UCB trocar a função de recompensa ou as restrições sem alterar a forma como $\theta$ é estimado.
+
+**Por que "guloso" (greedy):** testar todas as combinações possíveis de $k$ coberturas entre um catálogo maior seria caro computacionalmente. O oráculo guloso evita isso construindo o pacote item por item — a cada passo, adiciona o candidato que mais aumenta a função objetivo (relevância + diversidade), sem nunca reconsiderar escolhas já feitas.
+
+**A garantia formal que se aplica aqui:** este é justamente o caso "de fábrica" descrito no paper original — como a função de recompensa (soma dos scores + regularizador de diversidade) é **submodular e monótona**, e a restrição é cardinalidade fixa ($k$), o algoritmo guloso tem uma prova de aproximação $(1-1/e) \approx 63\%$ do valor ótimo — ou seja, mesmo sem testar todas as combinações, há uma garantia matemática de qualidade mínima do pacote encontrado. Essa é a mesma garantia que se perde quando saímos desse regime "clássico" (ver a ressalva equivalente no documento da versão customizada, onde a recompensa pode ter termos negativos e não há $k$ fixo).
+
 **Analogia:** montar a mala com um número **fixo** de compartimentos — você sabe de antemão que vai levar exatamente 3 peças, e escolhe as 3 que, juntas, maximizam relevância + variedade.
 
 **A matemática:** $S$ começa vazio. A cada passo, até $|S|=k$:
@@ -179,7 +185,51 @@ $$V \leftarrow V + \sum_{i\in S_{ofertado}} x(i)x(i)^{T}, \qquad b \leftarrow b 
 
 $$\hat\theta = V^{-1}b$$
 
-**De onde vem essa fórmula:** ela nasce de minimizar o erro quadrático entre a nota prevista e a observada, com uma penalização que evita valores extremos: $L(\theta) = \sum_n(y_n - \theta^Tx_n)^2 + \lambda\|\theta\|^2$. Derivando $L$ em relação a $\theta$ e igualando a zero, chega-se a $\big(\lambda I + \sum_n x_nx_n^T\big)\theta = \sum_n x_ny_n$ — batizando $V=\lambda I+\sum_n x_nx_n^T$ e $b=\sum_n x_ny_n$, isso é exatamente $\hat\theta=V^{-1}b$. O ponto importante: essa é uma equação **linear** em $\theta$ (basta inverter uma matriz), diferente da versão logística que veremos ser necessária mais adiante — é por isso que $V$ e $b$ podem ser somados diretamente, evento a evento ou em lote, sem precisar de nenhum otimizador iterativo.
+**De onde vem essa fórmula, passo a passo:**
+
+Assim como na versão logística (ver a derivação equivalente no documento da versão customizada), o ponto de partida é a **regra de Bayes**, aplicada a $\theta$:
+
+$$\underbrace{P(\theta \mid \text{dados})}_{\text{posteriori}} \;\propto\; \underbrace{P(\text{dados} \mid \theta)}_{\text{verossimilhança}} \;\times\; \underbrace{P(\theta)}_{\text{priori}}$$
+
+| Termo | O que significa aqui |
+|---|---|
+| **Priori** $P(\theta)$ | o que acreditávamos sobre $\theta$ antes de ver dados — $\theta \sim \mathcal{N}(0, \lambda^{-1}I)$, o mesmo "chute gaussiano perto de zero" da versão logística |
+| **Verossimilhança** $P(\text{dados}\mid\theta)$ | o quão prováveis são as notas observadas, assumindo um valor particular de $\theta$ — aqui é onde a suposição de **ruído gaussiano** entra, e é a diferença central em relação à versão logística |
+| **Posteriori** $P(\theta\mid\text{dados})$ | a crença atualizada sobre $\theta$ depois de combinar priori e verossimilhança |
+
+**Passo 1 — o que é "ruído gaussiano" e por que ele aparece aqui.** O modelo assume que a nota observada $y_n$ é a nota "verdadeira" prevista pela régua, $\theta^Tx_n$, mais um erro aleatório $\varepsilon_n$ que captura tudo que a régua não consegue prever (humor do cliente no dia, fatores não observados etc.):
+
+$$y_n = \theta^Tx_n + \varepsilon_n, \qquad \varepsilon_n \sim \mathcal{N}(0,\sigma^2) \text{ (i.i.d.)}$$
+
+Isso é uma suposição sobre a **verossimilhança**, não sobre a priori: dado $\theta$, a distribuição de $y_n$ é uma gaussiana centrada em $\theta^Tx_n$:
+
+$$P(y_n\mid\theta) = \frac{1}{\sqrt{2\pi\sigma^2}}\exp\left(-\frac{(y_n-\theta^Tx_n)^2}{2\sigma^2}\right)$$
+
+Esse é o ponto de contraste mais importante com a versão logística: lá, $y_n\in\{0,1\}$ segue uma **Bernoulli** ($P(y_n\mid\theta)=p_n^{y_n}(1-p_n)^{1-y_n}$, com $p_n=\sigma(\theta^Tx_n)$); aqui, $y_n$ é assumido contínuo e a verossimilhança é **gaussiana**, centrada diretamente em $\theta^Tx_n$ (sem nenhum funil no meio).
+
+**Passo 2 — a verossimilhança conjunta das $N$ observações**, assumindo independência entre elas dado $\theta$:
+
+$$P(\text{dados}\mid\theta) = \prod_{n=1}^N \frac{1}{\sqrt{2\pi\sigma^2}}\exp\left(-\frac{(y_n-\theta^Tx_n)^2}{2\sigma^2}\right)$$
+
+**Passo 3 — o logaritmo da verossimilhança.** Aplicando $\log$ (transforma produto em soma, e a exponencial desaparece):
+
+$$\log P(\text{dados}\mid\theta) = -\frac{1}{2\sigma^2}\sum_{n=1}^N(y_n-\theta^Tx_n)^2 + \text{constante (não depende de }\theta\text{)}$$
+
+Note o que aconteceu: **maximizar** essa log-verossimilhança em $\theta$ é exatamente o mesmo que **minimizar** $\sum_n(y_n-\theta^Tx_n)^2$ — a soma dos erros ao quadrado. É essa a ponte entre "assumir ruído gaussiano" e "minimizar erro quadrático": elas são a mesma coisa, matematicamente.
+
+**Passo 4 — o logaritmo da priori**, igual à versão logística: a densidade de $\mathcal{N}(0,\lambda^{-1}I)$ contribui com $-\frac{\lambda}{2}\|\theta\|^2$ (a parte que depende de $\theta$).
+
+**Passo 5 — somar as duas partes** (log-verossimilhança + log-priori) dá o log da posteriori, a menos de constantes:
+
+$$\log P(\theta\mid\text{dados}) \;\propto\; -\frac{1}{2\sigma^2}\sum_{n=1}^N(y_n-\theta^Tx_n)^2 - \frac{\lambda}{2}\|\theta\|^2$$
+
+Maximizar isso em $\theta$ (a estimativa **MAP**, *maximum a posteriori*) é equivalente a minimizar $L(\theta) = \sum_n(y_n-\theta^Tx_n)^2 + \lambda\sigma^2\|\theta\|^2$ — absorvendo a constante $\sigma^2$ dentro de $\lambda$ (uma simplificação padrão), essa é exatamente a função objetivo da ridge regression.
+
+**Passo 6 — por que existe solução fechada aqui (e não na versão logística).** Como tanto o termo de erro quadrático quanto a penalização $\|\theta\|^2$ são **quadráticos** em $\theta$, a derivada de $L(\theta)$ é **linear** em $\theta$. Derivando e igualando a zero:
+
+$$\frac{\partial L}{\partial\theta} = -2\sum_n x_n(y_n-x_n^T\theta) + 2\lambda\theta = 0 \quad\Longrightarrow\quad \Big(\lambda I + \sum_n x_nx_n^T\Big)\theta = \sum_n x_ny_n$$
+
+Batizando $V=\lambda I+\sum_n x_nx_n^T$ e $b=\sum_n x_ny_n$, isso é exatamente $\hat\theta=V^{-1}b$ — um sistema linear, resolvido por uma única inversão de matriz. Diferente da versão logística (onde $p_n=\sigma(\theta^Tx_n)$ entra de forma não-linear dentro do logaritmo, impedindo isolar $\theta$ algebricamente), aqui $V$ e $b$ podem ser somados diretamente, evento a evento ou em lote, sem precisar de nenhum otimizador iterativo.
 
 | Símbolo | Descrição |
 |---|---|
