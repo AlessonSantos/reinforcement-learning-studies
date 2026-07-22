@@ -97,7 +97,7 @@ Ao detalhar o pipeline completo, surgiu a pergunta-chave: **$\hat r(i)$ está ga
 
 **Resposta: não**, com ridge regression. $\hat\theta^Tx$ pode sair de $[0,1]$ livremente, e o bônus de exploração é desenhado para empurrar a estimativa para cima de propósito. A centralização, até ali, era só uma aproximação prática.
 
-**Solução: função de ligação logística.** Aplicando o bônus no espaço linear e só depois passando pelo funil $\sigma(\cdot)$, a saída fica sempre em $(0,1)$ — resolvendo a imprecisão de forma exata.
+**Solução: função de ligação logística.** Aplicando o bônus no espaço linear e só depois passando pelo funil $\sigma(\cdot)$, a saída fica sempre entre 0 e 1 — resolvendo a imprecisão de forma exata.
 
 ---
 

@@ -9,7 +9,7 @@ Este documento aplica o algoritmo **exatamente como descrito no paper original**
 
 | | C²UCB original (este documento) | Versão customizada que construímos |
 |---|---|---|
-| Estimação | ridge regression (linear) | regressão logística (scores sempre em $(0,1)$) |
+| Estimação | ridge regression (linear) | regressão logística (scores sempre entre 0 e 1) |
 | Diversidade | regularizador fixo, baseado só nas features estáticas dos itens | termo de par **aprendido** ($\phi$), capturando sinergia e canibalização reais |
 | Tamanho do pacote | $k$ fixo, definido antecipadamente | emergente, sem $k$ fixo |
 | Fadiga | não existe no paper original | aprendida via contexto de tamanho do pacote parcial |

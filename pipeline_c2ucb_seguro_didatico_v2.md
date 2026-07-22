@@ -256,8 +256,6 @@ $$H_\phi = \lambda I + \sum_{n=1}^{M} \max\big(p_n^{par}(1-p_n^{par}),\ \tau\big
 | $\hat\phi$ | a régua de sinergia/canibalização recalibrada — mesma mecânica de MAP + prior gaussiano da atualização de $\theta$ |
 | $H_\phi$ (corrigido) | a incerteza sobre $\phi$, já com o mesmo piso de curvatura $\tau$ aplicado — sem ele, pares de coberturas quase sempre aceitas ou quase sempre rejeitadas juntas sofreriam exatamente o mesmo platô artificial que identificamos para $\theta$ |
 
-**Por que isso não apareceu destacado antes:** as duas atualizações ($\theta$/$H_\theta$ e $\phi$/$H_\phi$) rodam de forma totalmente independente uma da outra — usam dados diferentes (observações de item vs. de par) e nenhuma delas depende do resultado da outra dentro da mesma rodada de treino. Por isso, no código (`item_model.refit()` e `pair_model.refit()`), são duas chamadas separadas, mas com exatamente a mesma lógica interna.
-
 **Uma ressalva honesta sobre reajuste em lote (mantida desta versão):** diferente da ridge regression, a regressão logística não permite simplesmente "somar" o lote novo ao estado antigo — é necessário reprocessar. A opção recomendada, dado o catálogo pequeno (14 itens, 91 pares), é o **reajuste completo**: guardar todas as observações desde o início (inclusive a fase aleatória) e reotimizar do zero a cada lote — isso vale tanto para $\theta$ quanto para $\phi$.
 
 **O que entra / o que sai:** entra: todas as observações acumuladas (Etapa 8, mais histórico), $\tau$ (Etapa 0). Sai: $\hat\theta, H_\theta, \hat\phi, H_\phi$ atualizados — sem o platô artificial — voltando para a Etapa 3 da próxima rodada.
@@ -305,7 +303,7 @@ Etapa 9 (reajuste em lote, com piso de curvatura τ) ──> novo θ̂, H_θ, φ
 
 | Peça | Resolve | No exemplo do Cliente A |
 |---|---|---|
-| $\sigma(\cdot)$ (funil logístico) | garante que a probabilidade nunca sai de $(0,1)$ | $p_{UCB}(\text{Desastres}) = 0{,}73$, nunca $>1$ |
+| $\sigma(\cdot)$ (funil logístico) | garante que a probabilidade nunca sai do intervalo entre 0 e 1 | $p_{UCB}(\text{Desastres}) = 0{,}73$, nunca $>1$ |
 | $\theta$ + tamanho do pacote | relevância individual **e** fadiga, aprendidas juntas | régua aprende como a chance de manter cai conforme a mala enche |
 | $\phi$ (par) | sinergia (+) e canibalização (−) específicas | par (Desastres, Danos Elétricos) fica cada vez mais negativo |
 | Centralização em 0,5 (exata) | transforma "menos bom" em "genuinamente ruim" | $\Delta(\text{Danos Elétricos}) \approx 0{,}01$ — quase descartado |
