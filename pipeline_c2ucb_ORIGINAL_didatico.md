@@ -9,7 +9,7 @@ Este documento aplica o algoritmo **exatamente como descrito no paper original**
 
 | | C²UCB original (este documento) | Versão customizada que construímos |
 |---|---|---|
-| Estimação | ridge regression (linear) | regressão logística (scores sempre em (0,1)) |
+| Estimação | ridge regression (linear) | regressão logística (scores sempre em $(0,1)$) |
 | Diversidade | regularizador fixo, baseado só nas features estáticas dos itens | termo de par **aprendido** ($\phi$), capturando sinergia e canibalização reais |
 | Tamanho do pacote | $k$ fixo, definido antecipadamente | emergente, sem $k$ fixo |
 | Fadiga | não existe no paper original | aprendida via contexto de tamanho do pacote parcial |
@@ -41,7 +41,7 @@ $$\theta \in \mathbb{R}^d, \qquad V = \lambda I, \qquad b = \vec 0$$
 
 ## 1. Uma nova rodada começa: o cliente chega
 
-**Analogia:** o Cliente A entra na loja.
+**Analogia:** o Cliente A entra na loja. Antes de qualquer coisa, você olha a ficha dele.
 
 **A matemática:** observa-se $c \in \mathbb{R}^p$.
 
@@ -120,9 +120,9 @@ $$h(\{\text{Incêndio}\}) = 0, \qquad h(\{\text{Incêndio}, \text{Desastres}\}) 
 
 **A matemática:** $S$ começa vazio. A cada passo, até $|S|=k$:
 
-$$i^* = \arg\max_{i \notin S} \Big[r_{UCB}(i) + \lambda_{div}\big(h(S\cup\{i\}, X) - h(S,X)\big)\Big]$$
+$$i^{\ast} = \arg\max_{i \notin S} \Big[r_{UCB}(i) + \lambda_{div}\big(h(S\cup\{i\}, X) - h(S,X)\big)\Big]$$
 
-Adiciona $i^*$ a $S$. Repete até $|S|=k$ — **não há critério de parada por ganho marginal negativo**: o algoritmo sempre preenche as $k$ posições, mesmo que o ganho da última seja pequeno ou até prejudicial.
+Adiciona $i^{\ast}$ a $S$. Repete até $|S|=k$ — **não há critério de parada por ganho marginal negativo**: o algoritmo sempre preenche as $k$ posições, mesmo que o ganho da última seja pequeno ou até prejudicial.
 
 **O exemplo rodando** ($k=3$, $\lambda_{div}=0{,}3$):
 
@@ -179,6 +179,8 @@ $$V \leftarrow V + \sum_{i\in S_{ofertado}} x(i)x(i)^{T}, \qquad b \leftarrow b 
 
 $$\hat\theta = V^{-1}b$$
 
+**De onde vem essa fórmula:** ela nasce de minimizar o erro quadrático entre a nota prevista e a observada, com uma penalização que evita valores extremos: $L(\theta) = \sum_n(y_n - \theta^Tx_n)^2 + \lambda\|\theta\|^2$. Derivando $L$ em relação a $\theta$ e igualando a zero, chega-se a $\big(\lambda I + \sum_n x_nx_n^T\big)\theta = \sum_n x_ny_n$ — batizando $V=\lambda I+\sum_n x_nx_n^T$ e $b=\sum_n x_ny_n$, isso é exatamente $\hat\theta=V^{-1}b$. O ponto importante: essa é uma equação **linear** em $\theta$ (basta inverter uma matriz), diferente da versão logística que veremos ser necessária mais adiante — é por isso que $V$ e $b$ podem ser somados diretamente, evento a evento ou em lote, sem precisar de nenhum otimizador iterativo.
+
 | Símbolo | Descrição |
 |---|---|
 | $V, b$ | acumuladores — podem ser atualizados evento a evento **ou** em lote, com resultado idêntico (soma é associativa) |
@@ -191,6 +193,8 @@ $$\hat\theta = V^{-1}b$$
 ---
 
 ## 8. O ciclo se fecha
+
+**Analogia:** o próximo cliente entra na loja, e a régua $\theta$ já está um pouco mais calibrada do que estava para o Cliente A — mas sempre a mesma régua única, sem funil, sem termo de par aprendido, sem fadiga.
 
 **A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta, V$ atualizados.
 

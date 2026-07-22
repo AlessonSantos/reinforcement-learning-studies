@@ -38,6 +38,8 @@ $$\theta \sim \mathcal{N}(\mu_0, \Sigma_0)$$
 
 ## 1. Uma nova rodada começa: o cliente chega
 
+**Analogia:** o Cliente A entra na loja. Antes de qualquer coisa, você olha a ficha dele.
+
 **A matemática:** observa-se $c\in\mathbb{R}^p$.
 
 **O exemplo rodando:** $c=[0{,}8,\ 1{,}0]$.
@@ -125,7 +127,7 @@ Note que o par (Desastres, Danos Elétricos) tem $L$ mais alto — mas isso **n�
 
 $$p(S) \propto \det(L_S)$$
 
-$$S^* = \arg\max_{|S|=N} \det(L_S)$$
+$$S^{\ast} = \arg\max_{|S|=N} \det(L_S)$$
 
 resolvido de forma aproximada por um algoritmo guloso rápido (MAP guloso para DPP): a cada passo, adiciona-se o item que mais aumenta o determinante do conjunto parcial, até atingir $N$ itens.
 
@@ -143,6 +145,8 @@ resolvido de forma aproximada por um algoritmo guloso rápido (MAP guloso para D
 ---
 
 ## 6. Oferta ao cliente
+
+**Analogia:** o conjunto de $N$ peças, escolhido para maximizar volume no mapa de similaridade, está pronto para ser mostrado.
 
 **O exemplo rodando:** $S_{ofertado} = \{\text{Incêndio}, \text{Desastres Naturais}, \text{Conteúdo Residencial}\}$.
 
@@ -167,6 +171,8 @@ $$\mu, \Sigma \;\leftarrow\; \text{atualização variacional}(\mu, \Sigma, \{(x(
 ---
 
 ## 8. O ciclo se fecha
+
+**Analogia:** o próximo cliente entra na loja, e o leque de réguas plausíveis está um pouco mais estreito do que estava para o Cliente A — mas o mecanismo de sorteio (Thompson Sampling) e a repulsão do DPP continuam os mesmos.
 
 **A matemática:** volta-se à Etapa 1, com uma nova amostragem de $\tilde\theta$ na Etapa 2 usando o leque já mais estreito.
 

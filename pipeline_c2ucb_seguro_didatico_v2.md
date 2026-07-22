@@ -128,7 +128,7 @@ Abaixo do morno — sinal de canibalização (sobreposição de sinistro entre o
 
 $$\Delta(i \mid S_{parcial}) = \Big(p_{UCB}(i) - 0{,}5\Big) \;+\; \sum_{j \in S_{parcial}} \Big(p_{UCB}^{par}(i,j) - 0{,}5\Big)$$
 
-Escolhe-se $i^* = \arg\max_i \Delta(i\mid S_{parcial})$. Se $\Delta(i^*)>0$, adiciona e repete; se $\Delta(i^*)\le 0$, para.
+Escolhe-se $i^{\ast} = \arg\max_i \Delta(i\mid S_{parcial})$. Se $\Delta(i^{\ast})>0$, adiciona e repete; se $\Delta(i^{\ast})\le 0$, para.
 
 **O exemplo rodando:**
 
@@ -201,6 +201,8 @@ $$y_{ij} = \begin{cases} 1 & \text{se ambos } i,j \in S_{final} \\ 0 & \text{se 
 
 $$\hat\theta = \arg\max_\theta \sum_{n=1}^{N} \Big[y_n \log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\|\theta\|^2, \qquad p_n=\sigma(\theta^Tx_n)$$
 
+**De onde vem essa fórmula:** ela nasce da regra de Bayes — posterior $\propto$ verossimilhança $\times$ prior. A verossimilhança de uma observação binária segue uma distribuição de Bernoulli, $p_n^{y_n}(1-p_n)^{1-y_n}$; somando o logaritmo dessa verossimilhança para as $N$ observações e somando o logaritmo do prior gaussiano em $\theta$ (que vira exatamente o termo $-\frac{\lambda}{2}\|\theta\|^2$), chega-se na expressão acima. Diferente da ridge regression (onde essa mesma lógica — minimizar erro quadrático + penalização — leva a uma equação **linear** em $\theta$, resolvível por inversão direta de matriz, $\hat\theta=V^{-1}b$), aqui $p_n=\sigma(\theta^Tx_n)$ entra **dentro do logaritmo** de forma não-linear. Por isso a maximização não tem solução fechada e precisa de um otimizador iterativo (o `scipy.optimize.minimize` no código) — é exatamente essa diferença que discutimos como o motivo de a regressão logística não permitir a atualização somável da ridge regression.
+
 Aqui $\lambda$ aparece como o termo $-\frac{\lambda}{2}\|\theta\|^2$: uma penalização que cresce conforme $\theta$ se afasta de zero. Na prática, isso impede que $\hat\theta$ "dispare" para valores extremos quando os dados são escassos ou quando uma cobertura é aceita/rejeitada de forma quase unânime (o cenário de quase-separação que motiva boa parte desta etapa) — sem essa penalização, a otimização poderia tentar empurrar $\theta$ ao infinito para explicar perfeitamente um padrão determinístico nos dados.
 
 ### O problema que descobrimos: o efeito "kappa"
@@ -236,7 +238,27 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \tau\big)\, x_n x_
 
 **Por que essa correção foi escolhida em vez de uma alternativa por contagem bruta:** o sistema é contextual — o mesmo item aparece em contextos diferentes (perfis de cliente diferentes, tamanhos de pacote diferentes). Uma correção baseada em "contar quantas vezes vi esse item" jogaria fora a generalização entre contextos parecidos, que é o motivo de termos escolhido C²UCB desde o início. O piso de curvatura, em vez disso, corrige o mecanismo exato onde o problema nasce (o peso da observação dentro de $H$), sem sair da geometria contextual do modelo.
 
-**Uma ressalva honesta sobre reajuste em lote (mantida desta versão):** diferente da ridge regression, a regressão logística não permite simplesmente "somar" o lote novo ao estado antigo — é necessário reprocessar. A opção recomendada, dado o catálogo pequeno (14 itens, 91 pares), é o **reajuste completo**: guardar todas as observações desde o início (inclusive a fase aleatória) e reotimizar do zero a cada lote.
+### A mesma atualização acontece em paralelo para $\phi$ (o termo de par)
+
+**Analogia:** enquanto uma régua ($\theta$) está sendo recalibrada com as fichas de "cobertura isolada", a segunda régua ($\phi$) está sendo recalibrada ao mesmo tempo, no mesmo fechamento de caixa, mas usando as fichas de "par de coberturas" (as observações $(z_{ij}, y_{ij})$ da Etapa 8) — é o mesmo procedimento, rodando sobre um conjunto de dados diferente.
+
+**A matemática:** exatamente a mesma estrutura da atualização de $\theta$, trocando o contexto de item $x_n$ pelo contexto de par $z_n$, e o rótulo $y_n$ (manteve/removeu aquele item) pelo rótulo $y_n^{par}$ (ambos da dupla sobreviveram juntos ou não):
+
+$$\hat\phi = \arg\max_\phi \sum_{n=1}^{M} \Big[y_n^{par} \log p_n^{par} + (1-y_n^{par})\log(1-p_n^{par})\Big] - \frac{\lambda}{2}\|\phi\|^2, \qquad p_n^{par}=\sigma(\phi^Tz_n)$$
+
+$$H_\phi = \lambda I + \sum_{n=1}^{M} \max\big(p_n^{par}(1-p_n^{par}),\ \tau\big)\, z_n z_n^{T}$$
+
+| Símbolo | Descrição |
+|---|---|
+| $M$ | número de observações de **par** acumuladas (lembrando: cada rodada gera vários pares a partir do pacote ofertado — ver Etapa 8) |
+| $z_n$ | o contexto do par $(i,j)$ daquela observação — o mesmo $z(i,j)$ definido na Etapa 4 |
+| $y_n^{par}$ | 1 se as duas coberturas do par sobreviveram juntas no pacote final, 0 caso contrário |
+| $\hat\phi$ | a régua de sinergia/canibalização recalibrada — mesma mecânica de MAP + prior gaussiano da atualização de $\theta$ |
+| $H_\phi$ (corrigido) | a incerteza sobre $\phi$, já com o mesmo piso de curvatura $\tau$ aplicado — sem ele, pares de coberturas quase sempre aceitas ou quase sempre rejeitadas juntas sofreriam exatamente o mesmo platô artificial que identificamos para $\theta$ |
+
+**Por que isso não apareceu destacado antes:** as duas atualizações ($\theta$/$H_\theta$ e $\phi$/$H_\phi$) rodam de forma totalmente independente uma da outra — usam dados diferentes (observações de item vs. de par) e nenhuma delas depende do resultado da outra dentro da mesma rodada de treino. Por isso, no código (`item_model.refit()` e `pair_model.refit()`), são duas chamadas separadas, mas com exatamente a mesma lógica interna.
+
+**Uma ressalva honesta sobre reajuste em lote (mantida desta versão):** diferente da ridge regression, a regressão logística não permite simplesmente "somar" o lote novo ao estado antigo — é necessário reprocessar. A opção recomendada, dado o catálogo pequeno (14 itens, 91 pares), é o **reajuste completo**: guardar todas as observações desde o início (inclusive a fase aleatória) e reotimizar do zero a cada lote — isso vale tanto para $\theta$ quanto para $\phi$.
 
 **O que entra / o que sai:** entra: todas as observações acumuladas (Etapa 8, mais histórico), $\tau$ (Etapa 0). Sai: $\hat\theta, H_\theta, \hat\phi, H_\phi$ atualizados — sem o platô artificial — voltando para a Etapa 3 da próxima rodada.
 
