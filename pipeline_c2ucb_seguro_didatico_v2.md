@@ -71,7 +71,14 @@ $$Z_t \sim \text{Bernoulli}(\epsilon_t)$$
 1. $\epsilon_t$ pode depender do tempo $t$ (ou de um valor de configuração vigente naquele momento), mas **nunca do perfil do cliente daquela rodada específica** — senão reintroduz o viés de seleção que a fase aleatória existe para evitar.
 2. $Z_t$ precisa ser sorteado **a cada rodada**, mesmo para o mesmo cliente ao longo do tempo — nunca "sorteie uma vez por cliente e fixe permanentemente", ou o modelo nunca aprenderia como aquele cliente reage aos dois regimes.
 
-**Um esclarecimento importante: isso não são "dois componentes aleatórios" competindo com o bônus de incerteza do modelo.** O bônus de exploração calculado nas Etapas 3 e 4 (o termo $\sqrt{x^TH^{-1}x}$) **não é estocástico** — dado um estado fixo do modelo, ele sempre desloca a decisão da mesma forma, de modo determinístico, a favor de itens pouco testados. Não existe nenhum sorteio ali dentro. $Z_t$ é a **única** fonte de aleatoriedade deliberada do sistema (a outra fonte de aleatoriedade que existe, a resposta do próprio cliente, não é um mecanismo de exploração — é o ruído inerente do fenômeno sendo modelado). Isso importa porque justifica por que a rota aleatória continua sendo necessária mesmo com o bônus já atuando: o bônus resolve "testar itens/pares específicos pouco vistos"; ele nunca gera, sozinho, variação de **tamanho de pacote** decorrelacionada do perfil do cliente — e é exatamente essa variação que a identificação da fadiga precisa, e que só $Z_t$ (via a rota aleatória) fornece.
+**Um esclarecimento importante: $Z_t$ e o bônus de incerteza do modelo não são dois mecanismos aleatórios competindo entre si — são coisas de natureza diferente.**
+
+- **$Z_t$ é aleatoriedade de verdade.** É um sorteio genuíno: a cada rodada, uma moeda é jogada, e o resultado decide se a rota é aleatória ou via modelo.
+- **O bônus de exploração (o termo $\sqrt{x^TH^{-1}x}$ calculado nas Etapas 3 e 4) não é aleatório — é uma regra fixa.** Dado um estado fixo do modelo, ele sempre desloca a decisão exatamente da mesma forma, a favor de itens pouco testados. Não há nenhum sorteio ali dentro: para o mesmo cliente e o mesmo estado do modelo, o oráculo guloso sempre chegaria ao mesmo pacote.
+
+Ou seja: $Z_t$ é a **única** fonte de aleatoriedade deliberada do sistema (existe também a resposta do próprio cliente, que é aleatória, mas essa não é um mecanismo de exploração — é só o ruído inerente do fenômeno sendo modelado).
+
+Essa distinção explica por que a rota aleatória continua sendo necessária mesmo com o bônus já atuando: o bônus resolve "testar itens/pares específicos pouco vistos", mas, por ser uma regra fixa, ele nunca gera sozinho variação de **tamanho de pacote** descorrelacionada do perfil do cliente — e é exatamente essa variação que a identificação da fadiga precisa. Só $Z_t$ (via a rota aleatória) fornece isso.
 
 **O exemplo rodando:** suponha que já passamos da fase de exploração intensa — vamos seguir o Cliente A pela via do modelo (Etapa 3 em diante).
 

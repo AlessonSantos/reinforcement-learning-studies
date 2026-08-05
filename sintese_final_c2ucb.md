@@ -222,7 +222,7 @@ Formalizamos a defesa contra a objeção "isso não perde a interpretação da p
 
 ### 22.3 Rodadas aleatórias são necessárias, ou o termo de exploração já bastaria?
 
-O bônus de exploração cobre "testar itens/pares pouco conhecidos", mas **não é estocástico** — dado um estado fixo do modelo, ele sempre desloca a decisão da mesma forma, deterministicamente. Ele nunca gera, sozinho, variação de **tamanho de pacote** decorrelacionada do perfil do cliente — e essa variação é justamente o que a identificação da fadiga precisa (a mesma questão de confusão entre fadiga e efeitos específicos discutida nas Seções 11-12). Além disso, ao abrir mão da restrição de cardinalidade fixa e do regime submodular monótono clássico, também abrimos mão da prova formal que garantiria que o bônus, sozinho, exploraria suficientemente. Conclusão: a fase aleatória continua sendo necessária, não substituível pelo termo de incerteza.
+O bônus de exploração cobre "testar itens/pares pouco conhecidos", mas **não é estocástico** — dado um estado fixo do modelo, ele sempre desloca a decisão da mesma forma, deterministicamente. Ele nunca gera, sozinho, variação de **tamanho de pacote** descorrelacionada do perfil do cliente — e essa variação é justamente o que a identificação da fadiga precisa (a mesma questão de confusão entre fadiga e efeitos específicos discutida nas Seções 11-12). Além disso, ao abrir mão da restrição de cardinalidade fixa e do regime submodular monótono clássico, também abrimos mão da prova formal que garantiria que o bônus, sozinho, exploraria suficientemente. Conclusão: a fase aleatória continua sendo necessária, não substituível pelo termo de incerteza.
 
 ### 22.4 Formalização de $Z_t$ e por que não são "dois componentes aleatórios" competindo
 
