@@ -53,11 +53,26 @@ $$H_\theta = \lambda I, \qquad H_\phi = \lambda I$$
 
 **Analogia:** nas primeiras semanas de uma loja nova, o vendedor testa combinações variadas de propósito, mesmo sabendo que algumas vão ser ruins, só para aprender rápido. Com o tempo, ele confia mais no que já sabe.
 
-**A matemática:** com probabilidade $\epsilon_t$ (decrescente em $t$), sorteia-se um tamanho de pacote $|S|$ e depois $|S|$ coberturas aleatórias — pulando para a Etapa 6. Caso contrário, segue para a Etapa 3.
+**A matemática — a variável que decide o caminho:**
+
+$$Z_t \sim \text{Bernoulli}(\epsilon_t)$$
+
+$$\begin{cases} Z_t = 1\ (\text{prob. } \epsilon_t) & \Rightarrow \text{rota aleatória: sorteia-se um tamanho de pacote } |S|\text{ e depois } |S|\text{ coberturas — pula para a Etapa 6} \\ Z_t = 0\ (\text{prob. } 1-\epsilon_t) & \Rightarrow \text{rota do modelo: segue para a Etapa 3} \end{cases}$$
+
+| Símbolo | Descrição |
+|---|---|
+| $Z_t$ | a única variável genuinamente aleatória que decide o caminho desta rodada — sorteada de novo a cada rodada, nunca fixada por cliente |
+| $\epsilon_t$ | a probabilidade de ir pela rota aleatória nesta rodada — decrescente ao longo do tempo, mas nunca chegando a zero (ver a tabela de parâmetros ao final deste documento) |
+
+**Duas regras que $Z_t$ e $\epsilon_t$ precisam respeitar, para a identificação de fadiga/sinergia/canibalização continuar válida:**
+1. $\epsilon_t$ pode depender do tempo $t$ (ou de um valor de configuração vigente naquele momento), mas **nunca do perfil do cliente daquela rodada específica** — senão reintroduz o viés de seleção que a fase aleatória existe para evitar.
+2. $Z_t$ precisa ser sorteado **a cada rodada**, mesmo para o mesmo cliente ao longo do tempo — nunca "sorteie uma vez por cliente e fixe permanentemente", ou o modelo nunca aprenderia como aquele cliente reage aos dois regimes.
+
+**Um esclarecimento importante: isso não são "dois componentes aleatórios" competindo com o bônus de incerteza do modelo.** O bônus de exploração calculado nas Etapas 3 e 4 (o termo $\sqrt{x^TH^{-1}x}$) **não é estocástico** — dado um estado fixo do modelo, ele sempre desloca a decisão da mesma forma, de modo determinístico, a favor de itens pouco testados. Não existe nenhum sorteio ali dentro. $Z_t$ é a **única** fonte de aleatoriedade deliberada do sistema (a outra fonte de aleatoriedade que existe, a resposta do próprio cliente, não é um mecanismo de exploração — é o ruído inerente do fenômeno sendo modelado). Isso importa porque justifica por que a rota aleatória continua sendo necessária mesmo com o bônus já atuando: o bônus resolve "testar itens/pares específicos pouco vistos"; ele nunca gera, sozinho, variação de **tamanho de pacote** decorrelacionada do perfil do cliente — e é exatamente essa variação que a identificação da fadiga precisa, e que só $Z_t$ (via a rota aleatória) fornece.
 
 **O exemplo rodando:** suponha que já passamos da fase de exploração intensa — vamos seguir o Cliente A pela via do modelo (Etapa 3 em diante).
 
-**O que entra / o que sai:** entra: $c$. Sai: sinal para calcular scores (Etapa 3) ou pacote aleatório.
+**O que entra / o que sai:** entra: $c$, $\epsilon_t$ (valor vigente no momento). Sai: $Z_t$ sorteado, e a partir dele, sinal para calcular scores (Etapa 3) ou pacote aleatório.
 
 ---
 
@@ -89,7 +104,7 @@ $$p_{UCB}(i) = \sigma\big(\eta(i) + \text{bonus}(i)\big) = \frac{1}{1+e^{-(\eta(
 
 $$p_{UCB}(\text{Desastres}) = \sigma(0{,}9+0{,}1) = \sigma(1{,}0) \approx 0{,}73$$
 
-**O que entra / o que sai:** entra: $c$, $\hat\theta$, $H_\theta$ (da Etapa 9 da rodada anterior), $|S_{parcial}|$. Sai: $p_{UCB}(i)$ por candidato, usado na Etapa 5.
+**O que entra / o que sai:** entra: $c$; $\hat\theta$ e $H_\theta$ — refletem **todas** as atualizações já feitas via Etapa 9 até este ponto, seja a origem delas uma rodada que passou pelo modelo (Etapas 3-5) ou uma rodada de exploração aleatória (que também gera observações e alimenta a mesma atualização). Só estão genuinamente zerados, vindos do Setup (Etapa 0), na primeiríssima vez que esta etapa é executada — o que, na prática, tende a ser bem mais tarde que a "rodada 1" propriamente dita, já que $\epsilon_t$ começa alto e as primeiras rodadas tendem a ir para o caminho aleatório (Etapa 2), pulando esta seção; $|S_{parcial}|$. Sai: $p_{UCB}(i)$ por candidato, usado na Etapa 5.
 
 ---
 
@@ -116,7 +131,7 @@ $$p_{UCB}^{par}(\text{Desastres}, \text{Danos Elétricos}) = \sigma(-0{,}7) \app
 
 Abaixo do morno — sinal de canibalização (sobreposição de sinistro entre os dois riscos).
 
-**O que entra / o que sai:** entra: $\hat\phi$, $H_\phi$, $f_i, f_j$, $c$. Sai: $p_{UCB}^{par}(i,j)$, usado na Etapa 5.
+**O que entra / o que sai:** entra: $\hat\phi$ e $H_\phi$ — pela mesma lógica da Etapa 3: refletem todas as atualizações já acumuladas via Etapa 9 (de rodadas aleatórias ou via modelo), só genuinamente zerados na primeiríssima execução desta etapa — além de $f_i, f_j$, $c$. Sai: $p_{UCB}^{par}(i,j)$, usado na Etapa 5.
 
 ---
 
@@ -431,7 +446,7 @@ Tudo que apareceu nas equações acima com uma letra grega ou um nome fixo é um
 | $\alpha$ (peso de exploração) | Etapas 3 e 4 | O quanto o bônus de incerteza pesa na decisão final — maior $\alpha$ = mais disposição a testar combinações pouco vistas, mesmo com estimativa pontual baixa | Começar mais alto (ex.: 1,5–2,0) na fase inicial e reduzir gradualmente conforme o histórico cresce |
 | $\tau$ (piso de curvatura) | Etapa 9 | Evita que itens/pares "quase certos" parem de reduzir incerteza (o efeito kappa) | Algo entre 0,02 e 0,10 (referência: $p(1-p)$ tem máximo 0,25 em $p=0{,}5$) |
 | Frequência de reajuste (tamanho do lote) | Etapa 9 | De quanto em quanto tempo (ou a cada quantos clientes) o histórico completo é reprocessado | Diário costuma ser suficiente para o volume esperado; pode ser ajustado conforme o tráfego real |
-| $\epsilon_t$ (probabilidade de exploração aleatória) e seu cronograma de decaimento | Etapa 2 | Por quanto tempo, e com que intensidade, a oferta aleatória (sem modelo) continua acontecendo | Começar próximo de 1,0 (quase só aleatório) e decair até um piso pequeno (ex.: 0,05) ao longo de semanas/meses — nunca chegar a zero, para continuar cobrindo combinações novas |
+| $\epsilon_t$ (probabilidade de exploração aleatória, via $Z_t\sim\text{Bernoulli}(\epsilon_t)$) e seu cronograma | Etapa 2 | Por quanto tempo, e com que intensidade, a oferta aleatória (sem modelo) continua acontecendo | Começar próximo de 1,0 (quase só aleatório) e decair até um piso pequeno (ex.: 0,05) ao longo de semanas/meses — nunca chegar a zero. Pode seguir uma fórmula de decaimento (linear, exponencial) ou ser ajustado manualmente por estágio do projeto, lido de um valor de configuração vigente (ex.: `epsilon_atual` num arquivo/tabela versionado) em vez de calculado por uma fórmula fixa — especialmente relevante numa arquitetura de serviço via API, onde não existe mais um contador único de "rodada $t$" |
 | Dimensões semânticas de $f_i$ (o catálogo) | Etapas 3 e 4 | Quais atributos descrevem cada cobertura (categoria de risco, faixa de prêmio, obrigatoriedade, frequência de sinistro, e quaisquer outras que a equipe atuarial considere relevantes) | Definido uma vez, manualmente, com a equipe de produto/atuária — pode evoluir depois para embeddings aprendidos, conforme discutido anteriormente |
 | Dimensões do perfil do cliente $c$ | Etapa 1 | Quais atributos do cliente entram no modelo (score de risco, valor do imóvel, região, composição familiar etc.) | Definido com a equipe de dados, com base no que já está disponível no cadastro |
 

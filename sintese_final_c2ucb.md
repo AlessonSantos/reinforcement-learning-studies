@@ -205,6 +205,53 @@ Antes de ligar o sistema ao data warehouse de verdade, é possível validar toda
 
 ---
 
+## 22. Defesa metodológica do sigmoide, arquitetura via API, e formalização da exploração aleatória
+
+### 22.1 A avaliação da biblioteca `contextualbandits` (LogisticUCB) — descartada
+
+Ao pesquisar alternativas prontas, avaliamos a classe `LogisticUCB` da biblioteca `contextualbandits` (baseada em Cortes, 2018). Conferindo o código-fonte, confirmamos que ela: (a) usa um modelo **disjunto por braço** — uma regressão logística independente por cobertura, sem compartilhar $\theta$ entre coberturas parecidas, jogando fora exatamente a generalização que motivou nossa arquitetura desde a Seção 16; (b) resolve o problema de escolher **um único braço por rodada**, sem nenhuma noção de super-braço ou oráculo combinatório — teríamos que construir toda a camada de pacote/pares por conta própria de qualquer forma; (c) o próprio autor da biblioteca desaconselha essa classe específica para uso sério ("implemented for comparison purposes only"). Conclusão: descartada — mecanicamente é a mesma ideia (GLM-UCB) que já implementamos, só que numa arquitetura incompatível com o nosso problema.
+
+### 22.2 Defesa formal de "recompensa + incerteza dentro do sigmoide"
+
+Formalizamos a defesa contra a objeção "isso não perde a interpretação da probabilidade?" em um documento dedicado: **`defesa_metodologica_sigmoide_incerteza.md`**. Os pontos centrais:
+- $p_{UCB}(i)$ é o **supremo** de $\sigma(\theta^Tx(i))$ sobre o **conjunto de confiança** de $\theta$ (o equivalente multidimensional de um intervalo de confiança — uma elipse, não um segmento de reta, já que $\theta$ é um vetor).
+- Como $\sigma$ é monótona crescente, o supremo comuta com a composição — somar o bônus no espaço linear e só depois aplicar o funil é a **única** forma matematicamente correta de calcular esse supremo, não uma conveniência.
+- A crítica só procederia se o bônus fosse emprestado do modelo linear-gaussiano antigo; não é o caso — $H$ é reconstruída da curvatura da própria verossimilhança de Bernoulli (GLM-UCB, Filippi et al., 2010).
+- $p_{UCB}(i)$ **não é** uma probabilidade calibrada — converge para a estimativa calibrada $\hat p(i)=\sigma(\hat\theta^Tx(i))$ só quando o bônus é pequeno; quando o bônus é grande, satura perto de 1 e vira um sinal de decisão para o oráculo guloso, não uma crença sobre o mundo.
+- **Caso de igualdade**: dois itens podem ter o mesmo $p_{UCB}$ com decomposições opostas (um "candidato de confiança", outro "candidato de exploração") — intercambiáveis para a decisão de hoje, mas com trajetórias diferentes depois, porque a observação de um item pouco conhecido é mais informativa que a de um item já bem conhecido (a mesma lógica do efeito kappa, Seção 18).
+
+### 22.3 Rodadas aleatórias são necessárias, ou o termo de exploração já bastaria?
+
+O bônus de exploração cobre "testar itens/pares pouco conhecidos", mas **não é estocástico** — dado um estado fixo do modelo, ele sempre desloca a decisão da mesma forma, deterministicamente. Ele nunca gera, sozinho, variação de **tamanho de pacote** decorrelacionada do perfil do cliente — e essa variação é justamente o que a identificação da fadiga precisa (a mesma questão de confusão entre fadiga e efeitos específicos discutida nas Seções 11-12). Além disso, ao abrir mão da restrição de cardinalidade fixa e do regime submodular monótono clássico, também abrimos mão da prova formal que garantiria que o bônus, sozinho, exploraria suficientemente. Conclusão: a fase aleatória continua sendo necessária, não substituível pelo termo de incerteza.
+
+### 22.4 Formalização de $Z_t$ e por que não são "dois componentes aleatórios" competindo
+
+$$Z_t \sim \text{Bernoulli}(\epsilon_t)$$
+
+decide a rota da rodada (aleatória se $Z_t=1$, via modelo se $Z_t=0$) — já incorporada explicitamente na Etapa 2 do documento didático. Esclarecido que isso não compete com o bônus de incerteza do modelo: o bônus é determinístico, $Z_t$ é a única fonte de aleatoriedade deliberada do sistema (a resposta do cliente é aleatória também, mas é ruído do fenômeno, não um mecanismo de exploração). Duas regras preservam a validade da identificação: $\epsilon_t$ nunca pode depender do cliente da rodada (só do tempo/configuração vigente), e $Z_t$ precisa ser sorteado a cada rodada, nunca fixado por cliente.
+
+### 22.5 A distribuição do tamanho do pacote sorteado pode ser customizada
+
+Confirmado que a distribuição de $|S|$ na rota aleatória não precisa ser uniforme — pode priorizar tamanhos centrais ou menores por demanda de negócio, desde que **não dependa do perfil do cliente**. Recomendação: evitar truncar uma Normal contínua (empilha massa artificial nos extremos por causa do corte); preferir uma distribuição definida diretamente sobre os inteiros $\{1,\dots,14\}$ — uma binomial deslocada, ou um vetor de probabilidades customizado por tamanho, mais fácil de traduzir diretamente a partir de uma preferência de negócio.
+
+### 22.6 Misturar dados de rodadas aleatórias e do modelo no retreino não é um problema
+
+O `refit()` faz regressão supervisionada direta sobre $(x,y)$ observados — não é avaliação de política (*off-policy*), que exigiria ponderação por propensão. Sob a suposição usual de não-confundimento (tudo que afeta simultaneamente a escolha do pacote e a resposta do cliente está capturado em $x$), misturar as duas origens no treino é válido sem correção adicional — é, aliás, como LinUCB/C²UCB são treinados na prática, já que a política do próprio sistema muda ao longo do tempo. Um efeito sutil, mas não um viés: observações vindas de rodadas guiadas pelo modelo tendem a ter $p_n$ mais extremo (o modelo já estava confiante), contribuindo menos para reduzir $H$ (mesmo efeito kappa, visto de outro ângulo) — reforçando, mais uma vez, a utilidade informacional da fase aleatória.
+
+### 22.7 $\epsilon$ pode ser ajustado manualmente por estágio do projeto
+
+Nenhuma exigência matemática impõe uma fórmula fechada de decaimento — $\epsilon_t$ pode ser lido de um valor de configuração ajustado manualmente pela equipe (versionado, com data e motivo da mudança registrados), com base em monitoramento real (o bônus está de fato encolhendo nos itens/pares mais raros?) em vez de uma curva calculada sem dados reais. As duas regras da Seção 22.4 continuam valendo, independente de quem decide o valor.
+
+### 22.8 Arquitetura real: recomendação via API em tempo real + retreino em lote, dois fluxos que se realimentam
+
+Confirmado o desenho de produção: **Fluxo 1** (tempo real, cliente a cliente) — a API sorteia $Z_t$ a cada chamada (usando o $\epsilon$ vigente lido da configuração, não um contador de "rodada $t$", o que evita problemas de concorrência entre múltiplas instâncias), gera a recomendação, e grava a decisão final do cliente numa tabela de histórico. **Fluxo 2** (batch, periódico) — o job de retreino lê essa tabela, roda `refit()`, e publica os novos parâmetros, que o Fluxo 1 passa a consumir. Os dois fluxos se realimentam exatamente como descrito na Seção 21, só que agora com o Fluxo 1 acionado por requisição HTTP em vez de loop. Ponto de atenção de engenharia: garantir que a gravação da decisão do cliente (que tipicamente é uma chamada/evento separado da geração da recomendação nessa arquitetura distribuída) esteja de fato implementada e confiável — sem ela, o retreino para de receber dados novos silenciosamente.
+
+### 22.9 Correções de consistência nos documentos didáticos
+
+Ao revisar os três documentos de pipeline para acompanhamento sequencial com a equipe, foram corrigidas referências prematuras do tipo "Etapa $X$ da rodada anterior" nas primeiras etapas de cada documento — problemático porque, com $\epsilon_t$ alto no início, a primeira vez que a Etapa 3 (ou equivalente) roda pode não ser a "rodada 1" literal, já que rodadas aleatórias tendem a vir antes. A frase corrigida deixa claro que $\hat\theta$/$H_\theta$ (e $\hat\phi$/$H_\phi$) refletem todas as atualizações já feitas até aquele ponto — de origem aleatória ou via modelo — e só estão genuinamente zerados na primeiríssima execução daquela etapa, não necessariamente na "rodada 1". Também foi corrigida uma frase confusa na Seção 3 do documento do C²UCB original, que dava a entender que $h(S,X)$ já tinha sido calculada para configurações que só o oráculo (Etapa 4) viria a testar depois.
+
+---
+
 ## O algoritmo consolidado, em uma frase
 
 Um C²UCB contextual com dois parâmetros compartilhados aprendidos via **regressão logística regularizada em lote** — um para relevância individual **com fadiga** embutida no contexto (tamanho do pacote parcial), outro para **sinergia/canibalização entre pares** de coberturas — cuja incerteza é estimada por aproximação de Laplace **com piso de curvatura** (para não penalizar itens já bem estabelecidos), decidindo o pacote via um **oráculo guloso sem cardinalidade fixa** que para quando o ganho marginal centralizado em 0,5 deixa de ser positivo, **sem nenhum termo de custo/prêmio**, alimentado por uma fase inicial de **amostragem aleatória de tamanhos variados** que funciona como experimento identificador dos efeitos de fadiga, sinergia e canibalização sem viés.
@@ -230,3 +277,4 @@ Um C²UCB contextual com dois parâmetros compartilhados aprendidos via **regres
 | 18 | Efeito kappa: itens "quase certos" não reduzem incerteza | Identificado e medido empiricamente |
 | 19 | Qual correção adotar? | Piso de curvatura $\tau$ (preserva a geometria contextual) |
 | 21 | Como implantar o retreino em produção? | Dois processos separados: treino agendado (lote diário) publicando parâmetros versionados; serviço em tempo real com hot-reload periódico |
+| 22 | O bônus de exploração dispensa a fase aleatória? Isso não perde interpretação de probabilidade? | Não dispensa (bônus é determinístico, não gera variação de tamanho); $p_{UCB}$ é o supremo sobre o conjunto de confiança, matematicamente bem definido (GLM-UCB) |

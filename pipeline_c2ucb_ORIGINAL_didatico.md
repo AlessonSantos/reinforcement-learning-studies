@@ -82,7 +82,7 @@ $$r_{UCB}(i) = \hat r(i) + \text{bonus}(i)$$
 
 Note que os valores passam de 1 — isso é normal aqui, porque não existe funil limitando a escala.
 
-**O que entra / o que sai:** entra: $c$, $\hat\theta$, $V$ (da Etapa 7 da rodada anterior). Sai: $r_{UCB}(i)$ para cada candidato, usado na Etapa 4.
+**O que entra / o que sai:** entra: $c$; $\hat\theta$ e $V$ — na primeira rodada, ainda zerados, vindos do Setup (Etapa 0); a partir da segunda rodada em diante, vêm já atualizados da Etapa 7 da rodada anterior. Sai: $r_{UCB}(i)$ para cada candidato, usado na Etapa 4.
 
 ---
 
@@ -110,7 +110,7 @@ $$h(\{\text{Incêndio}\}) = 0, \qquad h(\{\text{Incêndio}, \text{Desastres}\}) 
 
 (positivo, pois "Incêndio" é categoria de risco "outros" e "Desastres" é categoria de risco "climático" — vetores razoavelmente distintos no catálogo).
 
-**O que entra / o que sai:** entra: $f_i$ de cada cobertura candidata e das já escolhidas. Sai: o valor de $h(S,X)$ para cada configuração testada pelo oráculo (Etapa 4).
+**O que entra / o que sai:** entra: $f_i$ de cada cobertura candidata e das já escolhidas. Sai: **a fórmula de $h(S,X)$ pronta para uso** — o exemplo acima calculou seu valor só para uma configuração ilustrativa ($\{\text{Incêndio}\}$ e $\{\text{Incêndio},\text{Desastres}\}$); é o oráculo (Etapa 4) que vai recalculá-la repetidamente, para cada subconjunto $S$ diferente que for testando ao longo do processo guloso.
 
 ---
 

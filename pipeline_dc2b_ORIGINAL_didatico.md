@@ -56,7 +56,7 @@ $$\theta \sim \mathcal{N}(\mu_0, \Sigma_0)$$
 
 $$\tilde\theta \sim \mathcal{N}(\mu, \Sigma)$$
 
-onde $\mu, \Sigma$ são a média e covariância **atuais** da posterior aproximada (atualizadas na Etapa 7 da rodada anterior).
+onde $\mu, \Sigma$ são a média e covariância **atuais** da posterior aproximada — na primeira rodada, iguais a $\mu_0, \Sigma_0$ do Setup (Etapa 0); a partir da segunda rodada em diante, atualizadas na Etapa 7 da rodada anterior.
 
 | Símbolo | Descrição |
 |---|---|
@@ -65,7 +65,7 @@ onde $\mu, \Sigma$ são a média e covariância **atuais** da posterior aproxima
 
 **O exemplo rodando:** suponha que $\mu, \Sigma$ já refletem várias rodadas de aprendizado, e o sorteio desta rodada resulta em $\tilde\theta$ ligeiramente mais otimista que a média para coberturas de risco climático.
 
-**O que entra / o que sai:** entra: $\mu, \Sigma$ (Etapa 7 anterior). Sai: $\tilde\theta$, usado na Etapa 3.
+**O que entra / o que sai:** entra: $\mu, \Sigma$ — na primeira rodada, do Setup (Etapa 0); depois, da Etapa 7 anterior. Sai: $\tilde\theta$, usado na Etapa 3.
 
 ---
 
