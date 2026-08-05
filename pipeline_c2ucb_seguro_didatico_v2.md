@@ -57,7 +57,10 @@ $$H_\theta = \lambda I, \qquad H_\phi = \lambda I$$
 
 $$Z_t \sim \text{Bernoulli}(\epsilon_t)$$
 
-$$\begin{cases} Z_t = 1\ (\text{prob. } \epsilon_t) & \Rightarrow \text{rota aleatória: sorteia-se um tamanho de pacote } |S|\text{ e depois } |S|\text{ coberturas — pula para a Etapa 6} \\ Z_t = 0\ (\text{prob. } 1-\epsilon_t) & \Rightarrow \text{rota do modelo: segue para a Etapa 3} \end{cases}$$
+| Se... | Então... |
+|---|---|
+| $Z_t=1$ (prob. $\epsilon_t$) | rota aleatória: sorteia-se um tamanho de pacote $\lvert S\rvert$ e depois $\lvert S\rvert$ coberturas — pula para a Etapa 6 |
+| $Z_t=0$ (prob. $1-\epsilon_t$) | rota do modelo: segue para a Etapa 3 |
 
 | Símbolo | Descrição |
 |---|---|
@@ -253,11 +256,17 @@ Mesmo a sinergia de Conteúdo com Roubo (0,65, a maior da tabela) não é sufici
 
 **A matemática — sinal por item:**
 
-$$y_i = \begin{cases} 1 & \text{se } i \in S_{final} \\ 0 & \text{caso contrário} \end{cases}$$
+| $y_i$ | Condição |
+|---|---|
+| 1 | se $i \in S_{final}$ |
+| 0 | caso contrário |
 
 **Sinal por par** (para pares presentes no pacote ofertado):
 
-$$y_{ij} = \begin{cases} 1 & \text{se ambos } i,j \in S_{final} \\ 0 & \text{se pelo menos um foi removido} \end{cases}$$
+| $y_{ij}$ | Condição |
+|---|---|
+| 1 | se ambos $i,j \in S_{final}$ |
+| 0 | se pelo menos um foi removido |
 
 **O exemplo rodando:**
 
