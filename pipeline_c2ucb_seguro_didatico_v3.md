@@ -88,7 +88,18 @@ Essa distinção explica por que a rota aleatória continua sendo necessária me
 
 ## 3. Score do item via regressão logística
 
-**Antes de mais nada: o que é $S_{parcial}$?** Essa variável aparece pela primeira vez aqui, mas quem a **constrói** é o oráculo guloso, só explicado na Etapa 5 — vale adiantar o essencial para esta etapa não ficar no vácuo. $S_{parcial}$ é **o pacote que está sendo montado, item por item, no exato momento em que o oráculo está decidindo**: ele começa vazio (nenhuma cobertura ainda escolhida) e cresce a cada passo do processo guloso, conforme uma nova cobertura é adicionada. Quando esta etapa pergunta "qual é o score da cobertura $i$, dado $S_{parcial}$?", a pergunta real é: *"se eu já tenho estas coberturas na mala até agora, quanto vale adicionar mais esta?"* — e $|S_{parcial}|$ (o **tamanho** desse pacote parcial) é o que carrega a informação de fadiga: quanto maior a mala já está, menor tende a ser a propensão de aceitar mais uma peça. A Etapa 5 mostra exatamente como $S_{parcial}$ cresce, passo a passo, até o pacote final.
+**Antes de mais nada: o que é $S_{parcial}$, e por que ela já aparece aqui?**
+
+As Etapas 3 e 4 não são, na prática, executadas uma única vez em sequência — elas definem as **fórmulas de cálculo** que o oráculo guloso (Etapa 5) vai chamar repetidamente, uma vez para cada candidato, a cada passo do processo de montagem do pacote. $S_{parcial}$ é justamente o **estado interno desse processo**: o subconjunto de coberturas que o oráculo já decidiu incluir, naquele passo específico — começa vazio e cresce uma cobertura por vez, conforme a Etapa 5 detalha.
+
+Por isso a ordem de leitura fica um pouco invertida: precisamos primeiro entender o que essas fórmulas calculam (Etapas 3 e 4) para só depois entender o processo que as chama repetidamente (Etapa 5) — mas $S_{parcial}$, o "insumo de entrada" delas, só ganha sentido pleno quando esse processo é visto por inteiro.
+
+$S_{parcial}$ entra de duas formas diferentes, uma em cada etapa:
+
+- **Na Etapa 3** (score do item): o **tamanho** do pacote parcial, $|S_{parcial}|$, entra como parte do contexto $x(i,S_{parcial})$ — é o que carrega a informação de fadiga (quanto maior a mala já está, menor tende a ser a propensão de aceitar mais uma peça).
+- **Na Etapa 4** (score do par): não é o tamanho que importa, mas os **membros** de $S_{parcial}$ — para um candidato $i$, o oráculo calcula o score de par com **cada** cobertura $j$ que já esteja dentro de $S_{parcial}$ naquele passo. Ou seja, $S_{parcial}$ determina *quais* pares são avaliados a cada passo, não só quantas coberturas já foram escolhidas.
+
+Com isso em mente, quando a Etapa 5 mostrar o processo completo, $S_{parcial}$ vai crescer visivelmente, passo a passo — e as fórmulas destas duas etapas serão aplicadas de novo a cada novo passo, com um $S_{parcial}$ diferente a cada vez.
 
 **Analogia:** $\theta$ é uma régua que, para cada combinação "cliente + cobertura + tamanho da mala até agora", devolve um número. Esse número passa por um funil (a função logística) que o espreme para dentro de 0 a 1 — nunca escapa desse intervalo.
 
@@ -140,11 +151,11 @@ $$p_{UCB}^{par}(i,j) = \sigma\Big(\underbrace{\eta(i)+\eta(j)}_{\text{offset fix
 | $c$ | perfil do cliente — permite que a sinergia/canibalização também dependa de quem é o cliente, não só da identidade do par |
 | $z(i,j)$ | a concatenação de tudo acima — o vetor completo que descreve a situação do par |
 
-**O exemplo rodando:** para o par (Desastres Naturais, Danos Elétricos), suponha $\eta(\text{Desastres})=0{,}90$ (o mesmo valor da Etapa 3) e $\eta(\text{Danos Elétricos})=0{,}75$ — então o offset é $0{,}90+0{,}75=1{,}65$. Suponha que $\hat\phi^Tz(i,j)=-2{,}40$ (a régua de par já aprendeu uma canibalização forte entre esses dois riscos) e o bônus seja $0{,}05$:
+**O exemplo rodando:** para o par (Desastres Naturais, Danos Elétricos), suponha $\eta(\text{Desastres})=0{,}90$ (o mesmo valor da Etapa 3) e $\eta(\text{Danos Elétricos})=0{,}75$ — então o offset é $0{,}90+0{,}75=1{,}65$. Suponha que $\hat\phi^Tz(i,j)=-2{,}40$ (a régua de par já aprendeu uma canibalização forte entre esses dois riscos) e o bônus seja 0,05:
 
 $$p_{UCB}^{par}(\text{Desastres}, \text{Danos Elétricos}) = \sigma(1{,}65 - 2{,}40 + 0{,}05) = \sigma(-0{,}70) \approx 0{,}33$$
 
-Repare que o valor de $\hat\phi^Tz(i,j)$ precisou ser bem negativo ($-2{,}40$) para puxar a probabilidade final para baixo — exatamente porque os dois itens são individualmente bem avaliados (offset alto, $1{,}65$). Isso é o comportamento certo: só um efeito de interação genuinamente forte deveria conseguir reverter dois itens individualmente bons para uma probabilidade conjunta baixa. Abaixo do morno — sinal de canibalização real (sobreposição de sinistro entre os dois riscos), não uma coincidência de dois itens bons isoladamente.
+Repare que o valor de $\hat\phi^Tz(i,j)$ precisou ser bem negativo (−2,40) para puxar a probabilidade final para baixo — exatamente porque os dois itens são individualmente bem avaliados (offset alto, 1,65). Isso é o comportamento certo: só um efeito de interação genuinamente forte deveria conseguir reverter dois itens individualmente bons para uma probabilidade conjunta baixa. Abaixo do morno — sinal de canibalização real (sobreposição de sinistro entre os dois riscos), não uma coincidência de dois itens bons isoladamente.
 
 **O que entra / o que sai:** entra: $\hat\phi$ e $H_\phi$ — pela mesma lógica da Etapa 3: refletem todas as atualizações já acumuladas via Etapa 9 (de rodadas aleatórias ou via modelo), só genuinamente zerados na primeiríssima execução desta etapa — além de $\eta(i), \eta(j)$ (vindos da Etapa 3), $f_i, f_j$, $c$. Sai: $p_{UCB}^{par}(i,j)$, usado na Etapa 5.
 
@@ -371,15 +382,13 @@ $$\log P(\theta) = -\frac{\lambda}{2}\|\theta\|^2 + \text{constante (não depend
 
 $$\log P(\theta\mid\text{dados}) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\|\theta\|^2 + \text{constante}$$
 
-**Uma correção de notação que vale destacar:** antes do logaritmo, $P(\theta\mid\text{dados})\propto P(\text{dados}\mid\theta)P(\theta)$ usa $\propto$ corretamente — a constante descartada (a "evidência" $P(\text{dados})$, no denominador da regra de Bayes) é **multiplicativa**. Mas depois de aplicar $\log$, essa mesma constante deixa de multiplicar e passa a **somar** — então o símbolo correto deixa de ser $\propto$ (que denota especificamente uma relação multiplicativa) e passa a ser $=$ com um termo aditivo explícito, como escrito acima. Como essa constante não depende de $\theta$, ela desaparece ao maximizar (não muda onde fica o pico) — mas o símbolo usado para chegar lá precisa refletir a operação certa.
-
 Maximizar essa expressão em $\theta$ é exatamente a fórmula do início desta seção — o $\hat\theta$ resultante é chamado de estimativa **MAP** (*maximum a posteriori*: o valor de $\theta$ mais provável dado o que já foi observado e o que já se acreditava antes).
 
 ### Por que isso não tem solução fechada: o problema da conjugação
 
 **O que é "conjugação".** Uma priori é dita **conjugada** com uma verossimilhança quando o produto das duas — a posteriori, antes de normalizar — resulta numa distribuição da **mesma família** da priori. Quando isso acontece, dá para escrever a posteriori inteira em forma fechada, exatamente, não só o ponto de pico dela.
 
-**O caso ridge (C²UCB original) é conjugado, e é por isso que ele tem solução fechada.** Lá, a verossimilhança de cada observação é gaussiana ($y_n\sim\mathcal N(\theta^Tx_n,\sigma^2)$), e a priori sobre $\theta$ também é gaussiana. **Gaussiana × Gaussiana = Gaussiana** — a conjugação mais simples que existe. Isso significa que $\hat\theta=V^{-1}b$ não é só "o pico" da posteriori — é a **média exata** da posteriori, e $V^{-1}$ é a **covariância exata** dela, sem nenhuma aproximação: a posteriori *é*, literalmente, $\mathcal N(V^{-1}b,\ V^{-1})$.
+**O caso ridge (C²UCB original) é conjugado, e é por isso que ele tem solução fechada.** Lá, a verossimilhança de cada observação é gaussiana — $y_n\sim\mathcal N(\theta^Tx_n,\sigma^2)$ — e a priori sobre $\theta$ também é gaussiana. **Gaussiana × Gaussiana = Gaussiana** — a conjugação mais simples que existe. Isso significa que $\hat\theta=V^{-1}b$ não é só "o pico" da posteriori — é a **média exata** da posteriori, e $V^{-1}$ é a **covariância exata** dela, sem nenhuma aproximação: a posteriori *é*, literalmente, $\mathcal N(V^{-1}b,\ V^{-1})$.
 
 **O nosso caso (Bernoulli × gaussiana) não é conjugado.** O produto de uma verossimilhança de Bernoulli (via sigmoide) por uma priori gaussiana não resulta em nenhuma distribuição de família conhecida — a posteriori existe (é uma distribuição de probabilidade válida), mas não sabemos escrever sua forma exata. Sabemos só que $P(\theta\mid\text{dados})\propto P(\text{dados}\mid\theta)P(\theta)$, até uma constante — e essa constante em si já é intratável de calcular exatamente.
 
@@ -513,7 +522,7 @@ Tudo que apareceu nas equações acima com uma letra grega ou um nome fixo é um
 | $\alpha$ (peso de exploração) | Etapas 3 e 4 | O quanto o bônus de incerteza pesa na decisão final — maior $\alpha$ = mais disposição a testar combinações pouco vistas, mesmo com estimativa pontual baixa | Começar mais alto (ex.: 1,5–2,0) na fase inicial e reduzir gradualmente conforme o histórico cresce |
 | $\tau$ (piso de curvatura) | Etapa 9 | Evita que itens/pares "quase certos" parem de reduzir incerteza (o efeito kappa) | Algo entre 0,02 e 0,10 (referência: $p(1-p)$ tem máximo 0,25 em $p=0{,}5$) |
 | Frequência de reajuste (tamanho do lote) | Etapa 9 | De quanto em quanto tempo (ou a cada quantos clientes) o histórico completo é reprocessado | Diário costuma ser suficiente para o volume esperado; pode ser ajustado conforme o tráfego real |
-| $\epsilon_t$ (probabilidade de exploração aleatória, via $Z_t\sim\text{Bernoulli}(\epsilon_t)$) e seu cronograma | Etapa 2 | Por quanto tempo, e com que intensidade, a oferta aleatória (sem modelo) continua acontecendo | Começar próximo de 1,0 (quase só aleatório) e decair até um piso pequeno (ex.: 0,05) ao longo de semanas/meses — nunca chegar a zero. Pode seguir uma fórmula de decaimento (linear, exponencial) ou ser ajustado manualmente por estágio do projeto, lido de um valor de configuração vigente (ex.: `epsilon_atual` num arquivo/tabela versionado) em vez de calculado por uma fórmula fixa — especialmente relevante numa arquitetura de serviço via API, onde não existe mais um contador único de "rodada $t$" |
+| $\epsilon_t$ — probabilidade de exploração aleatória, via $Z_t\sim\text{Bernoulli}(\epsilon_t)$ — e seu cronograma | Etapa 2 | Por quanto tempo, e com que intensidade, a oferta aleatória (sem modelo) continua acontecendo | Começar próximo de 1,0 (quase só aleatório) e decair até um piso pequeno (ex.: 0,05) ao longo de semanas/meses — nunca chegar a zero. Pode seguir uma fórmula de decaimento (linear, exponencial) ou ser ajustado manualmente por estágio do projeto, lido de um valor de configuração vigente (ex.: `epsilon_atual` num arquivo/tabela versionado) em vez de calculado por uma fórmula fixa — especialmente relevante numa arquitetura de serviço via API, onde não existe mais um contador único de "rodada $t$" |
 | Dimensões semânticas de $f_i$ (o catálogo) | Etapas 3 e 4 | Quais atributos descrevem cada cobertura (categoria de risco, faixa de prêmio, obrigatoriedade, frequência de sinistro, e quaisquer outras que a equipe atuarial considere relevantes) | Definido uma vez, manualmente, com a equipe de produto/atuária — pode evoluir depois para embeddings aprendidos, conforme discutido anteriormente |
 | Dimensões do perfil do cliente $c$ | Etapa 1 | Quais atributos do cliente entram no modelo (score de risco, valor do imóvel, região, composição familiar etc.) | Definido com a equipe de dados, com base no que já está disponível no cadastro |
 
