@@ -59,7 +59,7 @@ $$\theta \in \mathbb{R}^d, \qquad V = \lambda I, \qquad b = \vec 0$$
 
 $$x(i) = \text{concat}\big(c,\; f_i,\; c \otimes f_i\big)$$
 
-$$\hat r(i) = \hat\theta^{\,T}x(i), \qquad \text{bonus}(i) = \alpha\sqrt{x(i)^{T}V^{-1}x(i)}$$
+$$\hat r(i) = \hat\theta^{T}x(i), \qquad \text{bonus}(i) = \alpha\sqrt{x(i)^{T}V^{-1}x(i)}$$
 
 $$r_{UCB}(i) = \hat r(i) + \text{bonus}(i)$$
 
@@ -205,7 +205,7 @@ Isso é uma suposição sobre a **verossimilhança**, não sobre a priori: dado 
 
 $$P(y_n\mid\theta) = \frac{1}{\sqrt{2\pi\sigma^2}}\exp\left(-\frac{(y_n-\theta^Tx_n)^2}{2\sigma^2}\right)$$
 
-Esse é o ponto de contraste mais importante com a versão logística: lá, $y_n\in\{0,1\}$ segue uma **Bernoulli** ($P(y_n\mid\theta)=p_n^{y_n}(1-p_n)^{1-y_n}$, com $p_n=\sigma(\theta^Tx_n)$); aqui, $y_n$ é assumido contínuo e a verossimilhança é **gaussiana**, centrada diretamente em $\theta^Tx_n$ (sem nenhum funil no meio).
+Esse é o ponto de contraste mais importante com a versão logística: lá, $y_n\in\{0,1\}$ segue uma **Bernoulli**, com $P(y_n\mid\theta)=p_n^{y_n}(1-p_n)^{1-y_n}$ e $p_n=\sigma(\theta^Tx_n)$; aqui, $y_n$ é assumido contínuo e a verossimilhança é **gaussiana**, centrada diretamente em $\theta^Tx_n$ (sem nenhum funil no meio).
 
 **Passo 2 — a verossimilhança conjunta das $N$ observações**, assumindo independência entre elas dado $\theta$:
 

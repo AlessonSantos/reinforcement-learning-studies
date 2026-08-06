@@ -75,9 +75,9 @@ onde $\mu, \Sigma$ são a média e covariância **atuais** da posterior aproxima
 
 **A matemática:**
 
-$$p_i = \sigma\big(\tilde\theta^{\,T}x(i)\big) = \frac{1}{1+e^{-\tilde\theta^Tx(i)}}$$
+$$p_i = \sigma\big(\tilde\theta^{T}x(i)\big) = \frac{1}{1+e^{-\tilde\theta^Tx(i)}}$$
 
-$$q_i = p_i^{\,\gamma}$$
+$$q_i = p_i^{\gamma}$$
 
 | Símbolo | Descrição |
 |---|---|
@@ -98,7 +98,7 @@ $$q_i = p_i^{\,\gamma}$$
 
 **A matemática:**
 
-$$L_{ij} = q_i \, q_j \, S_{ij}$$
+$$L_{ij} = q_i  q_j  S_{ij}$$
 
 onde $S_{ij}$ é uma medida de similaridade entre as coberturas $i$ e $j$ (ex.: similaridade de cosseno entre $f_i$ e $f_j$), com $S_{ii}=1$.
 

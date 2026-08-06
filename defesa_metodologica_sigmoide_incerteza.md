@@ -54,7 +54,7 @@ A crítica procederia se o bônus de incerteza fosse emprestado do modelo antigo
 
 **Não foi isso que fizemos.** A matriz de incerteza foi reconstruída inteiramente a partir da curvatura da **própria verossimilhança de Bernoulli**:
 
-$$H = \lambda I + \sum_n p_n(1-p_n)\,x_nx_n^T$$
+$$H = \lambda I + \sum_n p_n(1-p_n)x_nx_n^T$$
 
 Essa construção tem nome na literatura acadêmica — **GLM-UCB** (Filippi, Cappé, Garivier & Szepesvári, 2010) — e é uma extensão revisada por pares do UCB para esse tipo de modelo, não uma improvisação nossa.
 
@@ -72,7 +72,7 @@ Para uma cobertura quase sempre aceita (ex.: Incêndio), o quanto cada nova obse
 
 **A solução — um piso mínimo:**
 
-$$H = \lambda I + \sum_n \max\big(p_n(1-p_n),\ \tau\big)\,x_nx_n^T$$
+$$H = \lambda I + \sum_n \max\big(p_n(1-p_n),\ \tau\big)x_nx_n^T$$
 
 O piso $\tau$ garante que a incerteza sempre continue diminuindo, sem travar num platô artificial. Depois da correção, o mesmo teste mostrou o bônus caindo de 0,50 para 0,25 após as mesmas 300 observações.
 
