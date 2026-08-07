@@ -28,7 +28,7 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 | $\epsilon_t$ | probabilidade de explorar aleatoriamente nesta rodada (ver Etapa 2) |
 | $\rho$ | fração das rodadas aleatórias reservada exclusivamente para calcular a taxa de referência de cada cobertura (ver Etapa 4) — nunca usada para treinar $\theta$ |
 
-**O que entra / o que sai:** nada entra. Sai: $\theta$ e $H_\theta$ zerados, e os parâmetros de configuração — $\lambda$, $\nu$, $\epsilon_t$, $\rho$ — definidos, prontos para a Rodada 1.
+**O que entra / o que sai:** nada entra. Sai: $\theta, H_\theta$ zerados, e os parâmetros de configuração — $\lambda, \nu, \epsilon_t, \rho$ — definidos, prontos para a Rodada 1.
 
 ---
 
@@ -66,7 +66,7 @@ $$Z_t \sim \text{Bernoulli}(\epsilon_t)$$
 
 **O exemplo rodando:** suponha que já passamos da fase de exploração intensa — vamos seguir o Cliente A pela via do modelo (Etapa 3 em diante).
 
-**O que entra / o que sai:** entra: $c$, $\epsilon_t$ (valor vigente no momento). Sai: $Z_t$ sorteado, e a partir dele, sinal para calcular scores (Etapa 3) ou pacote aleatório.
+**O que entra / o que sai:** entra: $c, \epsilon_t$ (valor vigente no momento). Sai: $Z_t$ sorteado, e a partir dele, sinal para calcular scores (Etapa 3) ou pacote aleatório.
 
 ---
 
@@ -97,7 +97,7 @@ $$\hat p(i) = \sigma\big(\eta(i)\big) = \frac{1}{1+e^{-\eta(i)}}$$
 
 $$\hat p(\text{Desastres Naturais}) = \sigma(0{,}90) \approx 0{,}71$$
 
-**O que entra / o que sai:** entra: $c$, $\theta$ e $H_\theta$ (do reajuste mais recente — Etapa 9). Sai: $\eta(i)$ e $\text{Var}[\eta(i)]$ para cada uma das 10 coberturas opcionais, usados na Etapa 5.
+**O que entra / o que sai:** entra: $c, \theta, H_\theta$ (do reajuste mais recente — Etapa 9). Sai: $\eta(i), \text{Var}[\eta(i)]$ para cada uma das 10 coberturas opcionais, usados na Etapa 5.
 
 ---
 
@@ -156,7 +156,7 @@ $$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \l
 
 **Por que somar as duas variâncias, e não comparar cada lado separadamente.** Tratar a incerteza de $\eta(i)$ e a incerteza do baseline como dois intervalos separados (checando se eles não se sobrepõem) seria estatisticamente mais conservador do que necessário — não equivale a um teste de diferença apropriado. Somar as variâncias e testar a diferença diretamente é a forma correta: usa exatamente a informação necessária, nem mais, nem menos.
 
-**O exemplo rodando:** para Desastres Naturais, com $\eta=0{,}90$, $\text{Var}[\eta]=0{,}05$ (Etapa 3), e $\text{logit}(\text{baseline})=-0{,}405$, $\text{Var}[\text{logit}(\text{baseline})]=0{,}0347$ (Etapa 4):
+**O exemplo rodando:** para Desastres Naturais, com $\eta=0{,}90, \text{Var}[\eta]=0{,}05$ (Etapa 3), e $\text{logit}(\text{baseline})=-0{,}405, \text{Var}[\text{logit}(\text{baseline})]=0{,}0347$ (Etapa 4):
 
 $$D(\text{Desastres}) = 0{,}90 - (-0{,}405) = 1{,}305$$
 
@@ -164,7 +164,7 @@ $$\text{Var}[D] = 0{,}05 + 0{,}0347 = 0{,}0847, \qquad \sqrt{\text{Var}[D]} \app
 
 $$D - z\sqrt{\text{Var}[D]} = 1{,}305 - 1{,}645\times 0{,}291 \approx 0{,}826 > 0 \quad\Rightarrow\quad \textbf{oferta}$$
 
-Para Danos Elétricos, suponha $\eta=0{,}201$, $\text{Var}[\eta]=0{,}09$ (uma cobertura ainda menos testada), e $\text{baseline}=0{,}50$ com $n=80$ (logo $\text{logit}(\text{baseline})=0$, $\text{Var}[\text{logit}(\text{baseline})]=0{,}05$):
+Para Danos Elétricos, suponha $\eta=0{,}201, \text{Var}[\eta]=0{,}09$ (uma cobertura ainda menos testada), e $\text{baseline}=0{,}50$ com $n=80$ (logo $\text{logit}(\text{baseline})=0, \text{Var}[\text{logit}(\text{baseline})]=0{,}05$):
 
 $$D(\text{Danos Elétricos}) = 0{,}201 - 0 = 0{,}201, \qquad \text{Var}[D] = 0{,}09+0{,}05=0{,}14$$
 
@@ -176,7 +176,7 @@ $$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \lbrace \text{Desast
 
 O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ fixo em nenhum lugar da equação.
 
-**O que entra / o que sai:** entra: $\eta(i)$, $\text{Var}[\eta(i)]$ (Etapa 3) e $\text{logit}(\text{baseline}_i)$, $\text{Var}[\text{logit}(\text{baseline}_i)]$ (Etapa 4), para cada opcional. Sai: $S_{ofertado}$.
+**O que entra / o que sai:** entra: $\eta(i), \text{Var}[\eta(i)]$ (Etapa 3) e $\text{logit}(\text{baseline}_i), \text{Var}[\text{logit}(\text{baseline}_i)]$ (Etapa 4), para cada opcional. Sai: $S_{ofertado}$.
 
 ---
 
@@ -184,7 +184,7 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 **Analogia:** a mala está pronta — hora de mostrar ao Cliente A.
 
-**O exemplo rodando:** $S_{ofertado} = \lbrace$4 obrigatórias, Desastres Naturais, Roubo e Furto, Conteúdo Residencial$\rbrace$.
+**O exemplo rodando:** $S_{ofertado} = \lbrace \text{4 obrigatórias, Desastres Naturais, Roubo e Furto, Conteúdo Residencial}\rbrace$.
 
 **O que entra / o que sai:** entra: $S_{ofertado}$ (Etapa 5). Sai: o mesmo conjunto, exposto ao cliente.
 
@@ -225,7 +225,7 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 | Danos Elétricos (opcional) | não | sim (espontânea) | **1** |
 | (demais opcionais não ofertadas nem adicionadas) | não | não | **0** |
 
-**O que entra / o que sai:** entra: $S_{ofertado}$, $S_{final}$. Sai: as observações $(x_i, y_i)$ de todas as 14 coberturas, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — lembrando que só as 10 opcionais passam pelo teste da Etapa 5, já que as obrigatórias nunca entram nessa comparação.
+**O que entra / o que sai:** entra: $S_{ofertado}, S_{final}$. Sai: as observações $(x_i, y_i)$ de todas as 14 coberturas, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — lembrando que só as 10 opcionais passam pelo teste da Etapa 5, já que as obrigatórias nunca entram nessa comparação.
 
 ---
 
@@ -326,11 +326,11 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_n x_n^{
 
 **Por que essa correção foi escolhida em vez de uma alternativa por contagem bruta:** o sistema é contextual — o mesmo item aparece em contextos diferentes (perfis de cliente diferentes). Uma correção baseada em "contar quantas vezes vi esse item" jogaria fora a generalização entre contextos parecidos, que é o motivo de $\theta$ ser compartilhado entre as 10 coberturas desde o início. O piso de curvatura, em vez disso, corrige o mecanismo exato onde o problema nasce (o peso da observação dentro de $H_\theta$), sem sair da geometria contextual do modelo.
 
-**A matemática — reajuste do baseline:** recalcula-se $\text{baseline}_i$, $n_i$, $\text{logit}(\text{baseline}_i)$ e sua variância (Etapa 4) usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
+**A matemática — reajuste do baseline:** recalcula-se $\text{baseline}_i, n_i, \text{logit}(\text{baseline}_i)$ e sua variância (Etapa 4) usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
 
 **A divisão entre "dados para $\theta$" e "dados reservados para o baseline" pode ser redesenhada a cada ciclo.** Como o reajuste de $\theta$ é sempre uma computação nova e autocontida, não existe exigência de que a mesma observação histórica vá sempre para o mesmo grupo em diferentes ciclos, nem de que a fração $\rho$ seja fixa ao longo do tempo — só precisa valer, dentro de um mesmo ciclo, que a divisão seja decidida antes de conhecer o resultado observado.
 
-**O que entra / o que sai:** entra: todas as observações acumuladas, já marcadas por origem (Etapa 8). Sai: $\hat\theta$, $H_\theta$, $\text{baseline}_i$ e $\text{logit}(\text{baseline}_i)$ atualizados, voltando para as Etapas 3 e 4 da próxima rodada.
+**O que entra / o que sai:** entra: todas as observações acumuladas, já marcadas por origem (Etapa 8). Sai: $\hat\theta, H_\theta, \text{baseline}_i, \text{logit}(\text{baseline}_i)$ atualizados, voltando para as Etapas 3 e 4 da próxima rodada.
 
 ---
 
@@ -338,7 +338,7 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_n x_n^{
 
 **Analogia:** o próximo cliente que chegar já se beneficia do que foi aprendido — a régua $\theta$ está um pouco mais calibrada, e as taxas de referência de cada cobertura têm um pouco mais de precisão, com incertezas um pouco menores dos dois lados.
 
-**A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta$, $H_\theta$, $\text{baseline}_i$ e sua variância já atualizados na Etapa 9.
+**A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta, H_\theta, \text{baseline}_i$ e sua variância já atualizados na Etapa 9.
 
 ---
 
