@@ -154,7 +154,7 @@ $$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \l
 | $\text{Var}[D(i)]$ | soma das duas incertezas — a de $\eta(i)$ (Etapa 3, via $H_\theta$) e a do baseline (Etapa 4, via método delta) |
 | A regra | exige não só que $\hat p(i)$ pareça maior que $b_i$, mas que essa diferença resista a subtrair uma margem proporcional à incerteza combinada — quanto mais incerto qualquer um dos dois lados, maior a margem exigida |
 
-**Por que somar as duas variâncias, e não comparar cada lado separadamente.** Tratar a incerteza de $\eta(i)$ e a incerteza do baseline como dois intervalos separados (checando se eles não se sobrepõem) seria estatisticamente mais conservador do que necessário — não equivale a um teste de diferença apropriado. Somar as variâncias e testar a diferença diretamente é a forma correta: usa exatamente a informação necessária, nem mais, nem menos.
+**Por que somar as duas variâncias, e não comparar cada lado separadamente.** Tratar a incerteza de $\eta(i)$ e a incerteza do baseline como dois intervalos separados, checando se eles não se sobrepõem — uma prática comum, às vezes chamada de **método de sobreposição de intervalos** ("overlap method") —, seria estatisticamente mais conservador do que necessário, não equivale a um teste de diferença apropriado. Isso é um resultado bem documentado na literatura estatística: **Schenker & Gentleman (2001)** mostraram que, quando os dois erros-padrão são iguais, checar a sobreposição de dois intervalos de 95% cada corresponde, na prática, a um teste de diferença com nível de significância muito mais rigoroso que 95% — próximo de 99%, não 95% —, rejeitando a hipótese nula com muito mais dificuldade do que o nível nominal sugeriria. Somar as variâncias e testar a diferença diretamente é a forma correta: usa exatamente a informação necessária, nem mais, nem menos.
 
 **O exemplo rodando:** para Desastres Naturais, com $\eta=0{,}90, \text{Var}[\eta]=0{,}05$ (Etapa 3), e $\text{logit}(b)=-0{,}405, \text{Var}[\text{logit}(b)]=0{,}0347$ (Etapa 4):
 
@@ -303,6 +303,14 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} p_n(1-p_n) x_n x_n^{T}$$
 
 **Analogia do problema:** imagine um jurado que só atualiza o quanto confia num veredito quando o caso é "difícil" (meio a meio). Se o caso é óbvio — todo mundo já sabe a resposta —, ele para de prestar atenção, mesmo vendo o mesmo padrão se confirmar centenas de vezes. É exatamente isso que $p_n(1-p_n)$ faz: esse peso é **máximo** quando $p_n\approx 0{,}5$ (caso "difícil") e **quase zero** quando $p_n$ está perto de 0 ou 1 (caso "óbvio" — ex.: uma cobertura quase sempre mantida).
 
+**Por que isso não é um defeito da nossa implementação — é uma propriedade real da regressão logística.** À primeira vista, parece um paradoxo: por que a incerteza ficaria alta justamente para as coberturas mais bem confirmadas? A resposta exige separar duas perguntas que parecem a mesma coisa, mas não são: *"estou confiante sobre o que vai acontecer?"* (a probabilidade $p(i)$) e *"estou confiante sobre o valor exato de $\eta(i)$, o log-odds que gera essa probabilidade?"* — essa segunda pergunta é o que $\text{Var}[\eta(i)]$ mede, e a resposta genuína pode ser "não", mesmo quando a primeira resposta é um "sim" categórico.
+
+Isso acontece porque o funil $\sigma(\cdot)$ **satura** nos extremos: duas hipóteses bem diferentes de $\eta(i)$ — digamos, $\eta=4$ (equivale a $p\approx 0{,}982$) e $\eta=7$ (equivale a $p\approx 0{,}999$) — produzem, na prática, o mesmo comportamento observável: quase sempre "aceitou". Centenas de observações confirmam que $\eta(i)$ está "em algum lugar bem alto", mas não conseguem discriminar **exatamente quão alto**, porque uma faixa larga de valores de $\eta$ diferentes comprime para quase a mesma probabilidade. É isso que $p_n(1-p_n)$ mede de verdade: não "quão certo o resultado parece", mas "quanto essa observação ajuda a **localizar precisamente** $\eta$ no espaço log-odds" — e, perto dos extremos, ela ajuda genuinamente pouco. Se você removesse toda a engenharia deste documento e usasse a aproximação de Laplace exatamente como a teoria estatística clássica define, esse comportamento apareceria do mesmo jeito — não é uma falha de implementação, é assim que a matemática funciona.
+
+**O que o piso $\nu$ realmente faz, então — uma decisão de engenharia, não uma correção estatística.** $\nu$ não torna a estimativa "mais certa" nem corrige um erro de cálculo: ele é uma escolha deliberada de tratar observações extremas como se carregassem um pouco mais de informação sobre $\eta$ do que elas genuinamente carregam, porque o custo prático de uma cobertura ficar presa (Etapa 5 nunca ganhando confiança suficiente para ofertá-la, mesmo com evidência esmagadora) supera o custo de abrir mão de um pouco de rigor estatístico. É uma troca consciente, não um "conserto" que devolve a resposta matematicamente correta.
+
+**Por que isso pesa mais no teste de significância (Etapa 5) do que na probabilidade em si.** Para $\hat p(i)=\sigma(\eta(i))$ isoladamente, o próprio funil já comprime qualquer incerteza de $\eta$ para uma faixa estreita de probabilidade perto do extremo — então, na escala de probabilidade, o efeito quase desaparece sozinho. Ele vira um problema prático concreto justamente porque o teste de significância da Etapa 5 compara $D(i)$ na escala log-odds (para as variâncias poderem ser somadas de forma limpa) — é nessa escala, onde a saturação do funil não protege mais nada, que uma variância inflada travaria o teste de rejeitar $H_0$ mesmo diante de evidência esmagadora.
+
 **Consequência prática, medida em teste real:** simulamos uma cobertura "quase certa" (sempre aceita) e observamos como a incerteza (e o bônus de exploração que ela alimentava, numa versão anterior deste algoritmo) evoluía conforme mais observações se acumulavam:
 
 | Observações acumuladas | Sem correção | Com correção (piso $\nu$) |
@@ -341,6 +349,18 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_n x_n^{
 **Analogia:** o próximo cliente que chegar já se beneficia do que foi aprendido — a régua $\theta$ está um pouco mais calibrada, e as taxas de referência de cada cobertura têm um pouco mais de precisão, com incertezas um pouco menores dos dois lados.
 
 **A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta, H_\theta, b_i$ e sua variância já atualizados na Etapa 9.
+
+---
+
+## Nota operacional: adicionando ou reclassificando coberturas no catálogo
+
+O catálogo não é fixo para sempre — coberturas novas podem surgir, e uma cobertura pode deixar de ser obrigatória (ou passar a ser). Vale registrar como o pipeline lida com essas mudanças, para não esquecer na hora de operar.
+
+**Por que uma cobertura nova pode ser pontuada imediatamente, sem redimensionar nada.** $\theta$ tem dimensão fixa, definida pelo espaço de atributos semânticos de $f_i$ (Etapa 3) — não pelo número de coberturas do catálogo. Como $f_i$ não inclui nenhum identificador one-hot por item, adicionar uma cobertura não muda a dimensão de $x(i)$ nem exige retreinar $\theta$ do zero: basta a equipe atuarial definir o vetor $f_i$ da cobertura nova, nas mesmas dimensões já usadas para as demais, e $\theta$ já consegue estimar $\eta(i)$ para ela — generalizando a partir de coberturas com atributos parecidos, mesmo sem nenhuma observação histórica específica.
+
+**O que ainda precisa de um período de aquecimento: o baseline.** $\theta$ generaliza de cara, mas $b_i$ (Etapa 4) começa em $n_i=0$ — sem observações reservadas, $\text{Var}[\text{logit}(b_i)]$ não é calculável. Uma cobertura nova (ou uma que acabou de deixar de ser obrigatória — que nunca foi exposta à rota aleatória, mesmo já tendo histórico de $y_i$ alimentando $\theta$) precisa ficar temporariamente de fora do teste de significância da Etapa 5, sendo testada só pela rota aleatória, até $n_i$ acumular o suficiente para o teste fazer sentido estatístico. É o mesmo mecanismo que já protege o catálogo como um todo — o motivo de $\epsilon$ nunca poder ser zero — só que aplicado à entrada de um item novo.
+
+**O caminho inverso (opcional → obrigatória) é mais simples:** a cobertura só sai do teste de significância e entra direto no conjunto sempre incluído (Etapa 5) — sem precisar de nenhum período de espera.
 
 ---
 
