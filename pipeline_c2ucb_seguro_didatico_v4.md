@@ -25,10 +25,10 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 | $\lambda$ | regularização — o quanto $\theta$ começa "travada" perto de zero antes de haver evidência forte, e o quanto continua puxada para zero mesmo depois, protegendo contra estimativas extremas |
 | $H_\theta$ | matriz de incerteza sobre $\theta$ — "quanto já se aprendeu, e em quais direções", usada para medir a confiança de cada estimativa (Etapa 3) |
 | $\nu$ | piso mínimo de curvatura usado ao atualizar $H_\theta$ (Etapa 9) — evita que coberturas com propensão muito próxima de 0 ou 1 parem de reduzir sua própria incerteza |
-| $\epsilon_t$ | probabilidade de explorar aleatoriamente nesta rodada (ver Etapa 2) |
+| $\epsilon$ | probabilidade de explorar aleatoriamente, em qualquer rodada — um valor **fixo**, definido pela equipe (ver Etapa 2) |
 | $\rho$ | fração das rodadas aleatórias reservada exclusivamente para calcular a taxa de referência de cada cobertura (ver Etapa 4) — nunca usada para treinar $\theta$ |
 
-**O que entra / o que sai:** nada entra. Sai: $\theta, H_\theta$ zerados, e os parâmetros de configuração — $\lambda, \nu, \epsilon_t, \rho$ — definidos, prontos para a Rodada 1.
+**O que entra / o que sai:** nada entra. Sai: $\theta, H_\theta$ zerados, e os parâmetros de configuração — $\lambda, \nu, \epsilon, \rho$ — definidos, prontos para a Rodada 1.
 
 ---
 
@@ -50,23 +50,23 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 
 **A matemática — a variável que decide o caminho:**
 
-$$Z_t \sim \text{Bernoulli}(\epsilon_t)$$
+$$Z_t \sim \text{Bernoulli}(\epsilon)$$
 
 | Se... | Então... |
 |---|---|
-| $Z_t=1$ (prob. $\epsilon_t$) | rota aleatória: cada uma das 10 coberturas opcionais entra no pacote de forma independente, com probabilidade fixa (ex.: 50%) — pula para a Etapa 6 |
-| $Z_t=0$ (prob. $1-\epsilon_t$) | rota do modelo: segue para a Etapa 3 |
+| $Z_t=1$ (prob. $\epsilon$) | rota aleatória: cada uma das 10 coberturas opcionais entra no pacote de forma independente, com probabilidade fixa (ex.: 50%) — pula para a Etapa 6 |
+| $Z_t=0$ (prob. $1-\epsilon$) | rota do modelo: segue para a Etapa 3 |
 
 | Símbolo | Descrição |
 |---|---|
 | $Z_t$ | a única variável genuinamente aleatória que decide o caminho — sorteada de novo a cada rodada, nunca fixada por cliente |
-| $\epsilon_t$ | decrescente ao longo do tempo, mas **nunca chega a zero** — continua garantindo que toda cobertura, mesmo uma já bem avaliada pelo modelo, continue sendo testada de vez em quando |
+| $\epsilon$ | um valor **fixo**, definido pela equipe — não decai automaticamente com o tempo. Precisa continuar **maior que zero** para sempre, para garantir que toda cobertura, mesmo uma já bem avaliada pelo modelo, continue sendo testada de vez em quando |
 
 **Por que a rota aleatória oferece cada cobertura de forma independente, sem se preocupar com o tamanho do pacote:** nesta versão, cada cobertura opcional é decidida individualmente, sem nenhum termo que dependa de quantas outras já foram incluídas — então a rota aleatória só precisa garantir que cada cobertura, isoladamente, seja testada com e sem a presença do cliente estar "exposto" a ela, em proporção suficiente para estimar sua taxa de aceitação de referência (Etapa 4).
 
 **O exemplo rodando:** suponha que já passamos da fase de exploração intensa — vamos seguir o Cliente A pela via do modelo (Etapa 3 em diante).
 
-**O que entra / o que sai:** entra: $c, \epsilon_t$ (valor vigente no momento). Sai: $Z_t$ sorteado, e a partir dele, sinal para calcular scores (Etapa 3) ou pacote aleatório.
+**O que entra / o que sai:** entra: $c, \epsilon$ (o valor fixo definido pela equipe). Sai: $Z_t$ sorteado, e a partir dele, sinal para calcular scores (Etapa 3) ou pacote aleatório.
 
 ---
 
@@ -380,7 +380,7 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 | $\sigma(\cdot)$ (funil logístico) | garante que a recompensa esperada nunca sai do intervalo entre 0 e 1 |
 | MAP com priori gaussiana | estima $\theta$ de forma regularizada, protegendo contra estimativas extremas com poucos dados |
 | $\theta$ compartilhado entre as 10 opcionais | permite generalizar entre coberturas parecidas, em vez de aprender cada uma isoladamente do zero |
-| $Z_t\sim\text{Bernoulli}(\epsilon_t)$ | única fonte de aleatoriedade deliberada — garante que toda cobertura continue sendo testada, mesmo as já bem avaliadas |
+| $Z_t\sim\text{Bernoulli}(\epsilon)$ | única fonte de aleatoriedade deliberada — garante que toda cobertura continue sendo testada, mesmo as já bem avaliadas |
 | Piso de curvatura $\nu$ em $H_\theta$ | evita que itens com histórico consistentemente extremo parem de reduzir sua própria incerteza — mantém a variância encolhendo com mais dados, mesmo em regiões de alta certeza |
 | Teste de significância ($D(i)$ vs. incerteza combinada) | decide se a diferença entre modelo e referência é grande o suficiente para confiar nela, sem exigir peso de negócio arbitrário e sem depender só de uma comparação pontual |
 | Reserva $\rho$ para o baseline | garante que a comparação entre $\eta(i)$ e o baseline seja entre duas estimativas estatisticamente independentes |
@@ -395,7 +395,7 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 |---|---|---|---|
 | $\lambda$ (regularização) | Etapas 0, 3 e 9 | O quanto $\theta$ fica "presa" perto de zero antes de haver evidência forte | Testar valores entre 0,5 e 2,0 |
 | $\nu$ (piso de curvatura) | Etapas 3 e 9 | Evita que a variância de itens muito certos pare de encolher com mais dados | Algo entre 0,02 e 0,10 (referência: $p(1-p)$ tem máximo 0,25 em $p=0{,}5$) |
-| $\epsilon_t$ e seu cronograma | Etapa 2 | Por quanto tempo, e com que intensidade, a oferta aleatória continua acontecendo | Começar próximo de 1,0 e decair até um piso pequeno (ex.: 0,05) — nunca chegar a zero |
+| $\epsilon$ (fixo, definido pela equipe) | Etapa 2 | Qual fração das rodadas continua sendo oferta aleatória, indefinidamente | Um ponto de partida razoável é algo entre 0,05 e 0,15 — precisa ser maior que zero, sem exceção |
 | $\rho$ (fração reservada para o baseline) | Etapas 4 e 9 | Quanto do dado aleatório fica reservado só para calibrar a referência, em vez de treinar $\theta$ | Um ponto de partida razoável é 30%, ajustável conforme o volume de tráfego |
 | $z$ (nível de confiança do teste) | Etapa 5 | Quão conservadora é a exigência de significância para ofertar | 1,645 (95% de confiança, um lado) é um ponto de partida padrão |
 | Lista de coberturas obrigatórias | Etapas 5 e 8 | Quais coberturas nunca passam pelo teste do modelo | Definida pela equipe de produto, a partir das regras contratuais do produto |
