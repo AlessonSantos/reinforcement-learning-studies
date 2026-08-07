@@ -1,4 +1,4 @@
-# Recomendação de pacotes de coberturas de seguro: bandit contextual com regressão logística e threshold calibrado
+# Recomendação de pacotes de coberturas de seguro: bandit contextual com regressão logística e teste de significância
 ### Guia matemático e didático
 
 ---
@@ -17,16 +17,18 @@ Cada seção segue o mesmo padrão: primeiro uma **analogia** para visualizar a 
 
 **A matemática:**
 
-$$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I)$$
+$$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qquad H_\theta = \lambda I$$
 
 | Símbolo | Descrição |
 |---|---|
 | $\theta$ | régua compartilhada entre as 10 coberturas opcionais: perfil do cliente + atributos da cobertura → propensão de aceitação |
 | $\lambda$ | regularização — o quanto $\theta$ começa "travada" perto de zero antes de haver evidência forte, e o quanto continua puxada para zero mesmo depois, protegendo contra estimativas extremas |
+| $H_\theta$ | matriz de incerteza sobre $\theta$ — "quanto já se aprendeu, e em quais direções", usada para medir a confiança de cada estimativa (Etapa 3) |
+| $\nu$ | piso mínimo de curvatura usado ao atualizar $H_\theta$ (Etapa 9) — evita que coberturas com propensão muito próxima de 0 ou 1 parem de reduzir sua própria incerteza |
 | $\epsilon_t$ | probabilidade de explorar aleatoriamente nesta rodada (ver Etapa 2) |
 | $\rho$ | fração das rodadas aleatórias reservada exclusivamente para calcular a taxa de referência de cada cobertura (ver Etapa 4) — nunca usada para treinar $\theta$ |
 
-**O que entra / o que sai:** nada entra. Sai: $\theta$ zerado, e os parâmetros de configuração — $\lambda$, $\epsilon_t$, $\rho$ — definidos, prontos para a Rodada 1.
+**O que entra / o que sai:** nada entra. Sai: $\theta$ e $H_\theta$ zerados, e os parâmetros de configuração — $\lambda$, $\nu$, $\epsilon_t$, $\rho$ — definidos, prontos para a Rodada 1.
 
 ---
 
@@ -74,7 +76,7 @@ $$Z_t \sim \text{Bernoulli}(\epsilon_t)$$
 
 **A matemática:**
 
-$$x(i) = \text{concat}\big(c,\; f_i,\; c \otimes f_i\big)$$
+$$x(i) = \text{concat}\big(c, f_i, c \otimes f_i\big)$$
 
 $$\eta(i) = \theta^{T} x(i)$$
 
@@ -93,11 +95,11 @@ $$\hat p(i) = \sigma\big(\eta(i)\big) = \frac{1}{1+e^{-\eta(i)}}$$
 
 $$P(\theta\mid\text{dados}) \propto \underbrace{P(\text{dados}\mid\theta)}_{\text{verossimilhança}} \times \underbrace{P(\theta)}_{\text{priori}}$$
 
-A verossimilhança de uma única observação $(x_n, y_n)$, com $y_n\in\{0,1\}$ e $p_n=\sigma(\theta^Tx_n)$, segue uma distribuição de Bernoulli: $P(y_n\mid\theta) = p_n^{y_n}(1-p_n)^{1-y_n}$ — a expressão vale $p_n$ quando $y_n=1$ e $1-p_n$ quando $y_n=0$, cobrindo os dois casos numa única fórmula. Tomando o logaritmo da verossimilhança conjunta de todas as observações e somando o logaritmo da priori, chega-se à log-posteriori, a menos de uma constante aditiva que não depende de $\theta$:
+A verossimilhança de uma única observação $(x_n, y_n)$, com $y_n\in\lbrace 0,1\rbrace $ e $p_n=\sigma(\theta^Tx_n)$, segue uma distribuição de Bernoulli: $P(y_n\mid\theta) = p_n^{y_n}(1-p_n)^{1-y_n}$ — a expressão vale $p_n$ quando $y_n=1$ e $1-p_n$ quando $y_n=0$, cobrindo os dois casos numa única fórmula. Tomando o logaritmo da verossimilhança conjunta de todas as observações e somando o logaritmo da priori, chega-se à log-posteriori, a menos de uma constante aditiva que não depende de $\theta$:
 
-$$\log P(\theta\mid\text{dados}) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\|\theta\|^2 + \text{constante}$$
+$$\log P(\theta\mid\text{dados}) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2 + \text{constante}$$
 
-$$\hat\theta = \arg\max_\theta \;\log P(\theta\mid\text{dados})$$
+$$\hat\theta = \arg\max_\theta \log P(\theta\mid\text{dados})$$
 
 **Por que isso não tem solução fechada.** Combinar uma verossimilhança de Bernoulli com uma priori gaussiana não produz uma posteriori de nenhuma família conhecida — essa não é uma peculiaridade deste problema específico, é uma propriedade da regressão logística bayesiana em geral, bem documentada na literatura estatística clássica. Como $p_n=\sigma(\theta^Tx_n)$ entra no logaritmo de forma não-linear, a derivada da log-posteriori em relação a $\theta$ também é não-linear — não dá para isolar $\theta$ algebricamente. Por isso, encontrar $\hat\theta$ exige um otimizador numérico iterativo (o gradiente usado é $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$), não uma única inversão de matriz.
 
@@ -105,69 +107,100 @@ $$\hat\theta = \arg\max_\theta \;\log P(\theta\mid\text{dados})$$
 
 $$\hat p(\text{Desastres Naturais}) = \sigma(0{,}90) \approx 0{,}71$$
 
-**O que entra / o que sai:** entra: $c$, $\theta$ (do reajuste mais recente — Etapa 9). Sai: $\hat p(i)$ para cada uma das 10 coberturas opcionais, usado na Etapa 5.
+**A incerteza sobre $\eta(i)$: aproximação de Laplace.** Como a posteriori não tem forma fechada (não é conjugada), aproxima-se a incerteza em torno de $\hat\theta$ por uma gaussiana local, com covariância dada pelo inverso da curvatura da log-posteriori no ponto ótimo:
+
+$$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_nx_n^{T}$$
+
+$$\text{Var}\big[\eta(i)\big] = x(i)^{T}H_\theta^{-1}x(i)$$
+
+| Símbolo | Descrição |
+|---|---|
+| $p_n(1-p_n)$ | quanto cada observação de treino contribui para reduzir a incerteza — máximo quando $p_n\approx 0{,}5$, mínimo perto de 0 ou 1 |
+| $\nu$ | um piso mínimo para esse peso — sem ele, itens com histórico consistentemente extremo (quase sempre aceitos ou quase sempre rejeitados) parariam de reduzir sua própria incerteza, mesmo com muitos dados confirmando o mesmo padrão repetidamente. É o piso que garante a variância continuar encolhendo conforme mais dados chegam, inclusive nessas regiões |
+| $\text{Var}[\eta(i)]$ | a incerteza sobre o score log-odds daquele cliente para aquela cobertura — usada na Etapa 5 para o teste de significância |
+
+**O exemplo rodando (continuação):** suponha $\text{Var}[\eta(\text{Desastres})] = 0{,}05$ — uma incerteza relativamente baixa, refletindo que $\theta$ já viu bastante dado informativo nessa região do espaço de contexto.
+
+**O que entra / o que sai:** entra: $c$, $\theta$ e $H_\theta$ (do reajuste mais recente — Etapa 9). Sai: $\eta(i)$ e $\text{Var}[\eta(i)]$ para cada uma das 10 coberturas opcionais, usados na Etapa 5.
 
 ---
 
-## 4. O threshold por cobertura: uma referência calibrada a partir dos próprios dados
+## 4. A taxa de referência de cada cobertura
 
 **Analogia:** antes de decidir se vale a pena confiar na régua do modelo para uma cobertura específica, é preciso saber qual seria a taxa de aceitação **se ninguém estivesse decidindo nada** — só para ter certeza de que o modelo está identificando algo além do óbvio.
 
-**Por que não usar 0,5 fixo para todas as coberturas.** Um ponto de corte fixo pressupõe implicitamente que aceitar e rejeitar uma oferta têm o mesmo peso de decisão para toda cobertura — uma suposição que não há motivo para ser verdadeira: cada cobertura pode ter uma taxa de aceitação "de base" bem diferente das demais. Em vez de impor um valor de negócio arbitrário (que exigiria quantificar custo e benefício de cada cobertura em unidades monetárias), a abordagem adotada aqui deriva o threshold diretamente dos dados: **só vale a pena confiar na segmentação do modelo para um cliente específico se a propensão estimada para ele for genuinamente maior do que a taxa de aceitação típica daquela cobertura**, quando ofertada sem nenhuma seleção.
+**Por que não usar 0,5 fixo para todas as coberturas.** Um ponto de corte fixo pressupõe implicitamente que aceitar e rejeitar uma oferta têm o mesmo peso de decisão para toda cobertura — uma suposição que não há motivo para ser verdadeira: cada cobertura pode ter uma taxa de aceitação "de base" bem diferente das demais. Em vez de impor um valor de negócio arbitrário, a abordagem adotada aqui deriva a referência diretamente dos dados: **só vale a pena confiar na segmentação do modelo para um cliente específico se a propensão estimada para ele for genuinamente maior do que a taxa de aceitação típica daquela cobertura**, quando ofertada sem nenhuma seleção — "genuinamente maior" sendo decidido por um teste de significância (Etapa 5), não por comparação direta de dois números.
 
-**A matemática — a taxa de referência:**
+**A matemática — a taxa de referência e sua incerteza:**
 
 $$\text{baseline}_i = \frac{\text{aceitações de } i \text{ nas rodadas reservadas}}{n_i}$$
 
 calculada **só** sobre uma fração $\rho$ das rodadas aleatórias ($Z_t=1$), reservada exclusivamente para este cálculo — nunca usada para treinar $\theta$ (Etapa 9), e nunca misturada com rodadas da rota do modelo.
 
-**Por que essa reserva é necessária, e por que a divisão precisa ser independente do resultado.** Se as mesmas observações alimentassem tanto o treino de $\theta$ quanto o cálculo do baseline, os dois deixariam de ser estatisticamente independentes — a comparação entre eles ficaria enviesada. A separação evita isso por construção. A regra que decide se uma rodada aleatória vai para a reserva do baseline ou para o treino de $\theta$ precisa depender só de algo definido **antes** de conhecer a resposta do cliente (por exemplo, um identificador da rodada, nunca do resultado observado) — senão a separação deixaria de proteger a independência que ela existe para garantir.
-
-**O limite superior de confiança do baseline, via intervalo de Wilson:**
-
-$$\tau_i = \frac{\text{baseline}_i + \dfrac{z^2}{2n_i} + z\sqrt{\dfrac{\text{baseline}_i(1-\text{baseline}_i)}{n_i} + \dfrac{z^2}{4n_i^2}}}{1+\dfrac{z^2}{n_i}}, \qquad z=1{,}645 \text{ (95\% de confiança, um lado)}$$
+$$\text{logit}(\text{baseline}_i) = \log\left(\frac{\text{baseline}_i}{1-\text{baseline}_i}\right), \qquad \text{Var}\big[\text{logit}(\text{baseline}_i)\big] \approx \frac{1}{n_i\cdot\text{baseline}_i\cdot(1-\text{baseline}_i)}$$
 
 | Símbolo | Descrição |
 |---|---|
 | $n_i$ | número de observações reservadas para a cobertura $i$ |
 | $\text{baseline}_i$ | proporção amostral pura — frequência de aceitação sem nenhuma seleção |
-| $\tau_i$ | o limite superior do intervalo de confiança do baseline — o threshold usado na decisão (Etapa 5) |
+| $\text{logit}(\text{baseline}_i)$ | a mesma taxa de referência, convertida para a escala log-odds — a mesma escala em que $\eta(i)$ vive, necessária para comparar os dois de forma consistente na Etapa 5 |
+| $\text{Var}[\text{logit}(\text{baseline}_i)]$ | a incerteza dessa taxa de referência, via método delta — maior quando $n_i$ é pequeno, ou quando $\text{baseline}_i$ está perto de 0 ou 1 |
 
-**Por que o limite superior, e por que Wilson em vez da aproximação normal simples.** Usar o limite superior (em vez do próprio $\text{baseline}_i$) protege contra decidir com base numa taxa de referência que só pareceu baixa por pouca amostra — quanto menor $n_i$, mais largo o intervalo, mais alto (mais conservador) fica $\tau_i$; conforme $n_i$ cresce, $\tau_i$ converge para o próprio $\text{baseline}_i$. A fórmula de Wilson é usada em vez da aproximação normal mais simples porque se comporta melhor precisamente nos casos mais delicados — poucas observações, ou taxas próximas de 0 ou 1 — sem risco de gerar limites fora do intervalo $[0,1]$.
+**Por que essa reserva é necessária, e por que a divisão precisa ser independente do resultado.** Se as mesmas observações alimentassem tanto o treino de $\theta$ quanto o cálculo do baseline, os dois deixariam de ser estatisticamente independentes — a comparação entre eles ficaria enviesada. A separação evita isso por construção. A regra que decide se uma rodada aleatória vai para a reserva do baseline ou para o treino de $\theta$ precisa depender só de algo definido **antes** de conhecer a resposta do cliente (por exemplo, um identificador da rodada, nunca do resultado observado).
 
-**O exemplo rodando:** suponha que, na fatia reservada, "Desastres Naturais" foi ofertada aleatoriamente $n_i=120$ vezes, com $\text{baseline}_i=0{,}40$ (40% de aceitação). Aplicando Wilson:
+**O exemplo rodando:** suponha que, na fatia reservada, "Desastres Naturais" foi ofertada aleatoriamente $n_i=120$ vezes, com $\text{baseline}_i=0{,}40$ (40% de aceitação):
 
-$$\tau_{\text{Desastres}} \approx 0{,}477$$
+$$\text{logit}(0{,}40) \approx -0{,}405, \qquad \text{Var}\big[\text{logit}(0{,}40)\big] = \frac{1}{120\times 0{,}40\times 0{,}60} \approx 0{,}0347$$
 
-**O que entra / o que sai:** entra: as observações reservadas de cada cobertura (acumuladas desde o início, atualizadas na Etapa 9). Sai: $\tau_i$ para cada uma das 10 coberturas opcionais, usado na Etapa 5.
+**O que entra / o que sai:** entra: as observações reservadas de cada cobertura (acumuladas desde o início, atualizadas na Etapa 9). Sai: $\text{logit}(\text{baseline}_i)$ e sua variância, para cada uma das 10 coberturas opcionais, usados na Etapa 5.
 
 ---
 
-## 5. A decisão: obrigatórias + o que passar no threshold
+## 5. A decisão: obrigatórias + o que passar no teste de significância
 
-**Analogia:** a mala já vem com um compartimento fixo, sempre presente (as obrigatórias). Para cada peça opcional, a pergunta é simples e independente das demais: "esse cliente específico tem propensão genuinamente maior que a média para esta peça?" — sem nenhum laço iterativo, sem reavaliar nada em função do que mais foi escolhido.
+**Analogia:** a mala já vem com um compartimento fixo, sempre presente (as obrigatórias). Para cada peça opcional, a pergunta não é só "a estimativa do modelo é maior que a referência?" — é "essa diferença é grande o suficiente para confiar nela, dado o quanto ainda somos incertos dos dois lados?".
 
-**A matemática:**
+**A matemática — a diferença e sua incerteza combinada:**
 
-$$S_{ofertado} = \underbrace{\{\text{4 obrigatórias}\}}_{\text{sempre incluídas}} \;\cup\; \big\{ i \in \{\text{10 opcionais}\} : \hat p(i) > \tau_i \big\}$$
+$$D(i) = \eta(i) - \text{logit}(\text{baseline}_i)$$
 
-Não existe processo guloso, nem ordem de avaliação, nem dependência entre as decisões — cada uma das 10 coberturas opcionais é comparada contra seu próprio $\tau_i$ de forma independente, e todas as que passarem entram no pacote, junto com as 4 obrigatórias.
+$$\text{Var}[D(i)] = \text{Var}[\eta(i)] + \text{Var}\big[\text{logit}(\text{baseline}_i)\big]$$
 
-**O exemplo rodando:**
+**A regra de decisão** — oferta se o limite inferior de confiança da diferença for maior que zero:
 
-| Cobertura opcional | $\hat p(i)$ | $\tau_i$ | Decisão |
-|---|---|---|---|
-| Desastres Naturais | 0,71 | 0,48 | **oferta** |
-| Danos Elétricos | 0,55 | 0,60 | não oferta |
-| Roubo e Furto | 0,62 | 0,50 | **oferta** |
-| Conteúdo Residencial | 0,45 | 0,40 | **oferta** |
-| Assistência Chaveiro | 0,30 | 0,35 | não oferta |
+$$D(i) - z\sqrt{\text{Var}[D(i)]} > 0, \qquad z=1{,}645 \text{ (95 por cento de confiança, um lado)}$$
 
-$$S_{ofertado} = \{\text{4 obrigatórias}\} \cup \{\text{Desastres Naturais, Roubo e Furto, Conteúdo Residencial}\}$$
+$$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \lbrace \text{10 opcionais}\rbrace : D(i) - z\sqrt{\text{Var}[D(i)]} > 0 \Big\rbrace $$
 
-O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ fixo em nenhum lugar da equação, e também não há nenhuma penalidade artificial por tamanho: se numa rodada 8 das 10 opcionais passarem no threshold, as 8 são ofertadas.
+| Símbolo | Descrição |
+|---|---|
+| $D(i)$ | a diferença entre o score do modelo e a referência, na mesma escala (log-odds) |
+| $\text{Var}[D(i)]$ | soma das duas incertezas — a de $\eta(i)$ (Etapa 3, via $H_\theta$) e a do baseline (Etapa 4, via método delta) |
+| A regra | exige não só que $\hat p(i)$ pareça maior que $\text{baseline}_i$, mas que essa diferença resista a subtrair uma margem proporcional à incerteza combinada — quanto mais incerto qualquer um dos dois lados, maior a margem exigida |
 
-**O que entra / o que sai:** entra: $\hat p(i)$ (Etapa 3) e $\tau_i$ (Etapa 4) para cada opcional. Sai: $S_{ofertado}$.
+**Por que somar as duas variâncias, e não comparar cada lado separadamente.** Tratar a incerteza de $\eta(i)$ e a incerteza do baseline como dois intervalos separados (checando se eles não se sobrepõem) seria estatisticamente mais conservador do que necessário — não equivale a um teste de diferença apropriado. Somar as variâncias e testar a diferença diretamente é a forma correta: usa exatamente a informação necessária, nem mais, nem menos.
+
+**O exemplo rodando:** para Desastres Naturais, com $\eta=0{,}90$, $\text{Var}[\eta]=0{,}05$ (Etapa 3), e $\text{logit}(\text{baseline})=-0{,}405$, $\text{Var}[\text{logit}(\text{baseline})]=0{,}0347$ (Etapa 4):
+
+$$D(\text{Desastres}) = 0{,}90 - (-0{,}405) = 1{,}305$$
+
+$$\text{Var}[D] = 0{,}05 + 0{,}0347 = 0{,}0847, \qquad \sqrt{\text{Var}[D]} \approx 0{,}291$$
+
+$$D - z\sqrt{\text{Var}[D]} = 1{,}305 - 1{,}645\times 0{,}291 \approx 0{,}826 > 0 \quad\Rightarrow\quad \textbf{oferta}$$
+
+Para Danos Elétricos, suponha $\eta=0{,}201$, $\text{Var}[\eta]=0{,}09$ (uma cobertura ainda menos testada), e $\text{baseline}=0{,}50$ com $n=80$ (logo $\text{logit}(\text{baseline})=0$, $\text{Var}[\text{logit}(\text{baseline})]=0{,}05$):
+
+$$D(\text{Danos Elétricos}) = 0{,}201 - 0 = 0{,}201, \qquad \text{Var}[D] = 0{,}09+0{,}05=0{,}14$$
+
+$$D - z\sqrt{\text{Var}[D]} = 0{,}201 - 1{,}645\times 0{,}374 \approx -0{,}414 < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
+
+Mesmo com $\eta(\text{Danos Elétricos})>\text{logit}(\text{baseline})$ (a estimativa pontual do modelo é maior que a referência), a diferença não é grande o suficiente diante da incerteza combinada — o teste corretamente recusa confiar nela ainda.
+
+$$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \lbrace \text{Desastres Naturais}, \ldots\rbrace$$
+
+O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ fixo em nenhum lugar da equação.
+
+**O que entra / o que sai:** entra: $\eta(i)$, $\text{Var}[\eta(i)]$ (Etapa 3) e $\text{logit}(\text{baseline}_i)$, $\text{Var}[\text{logit}(\text{baseline}_i)]$ (Etapa 4), para cada opcional. Sai: $S_{ofertado}$.
 
 ---
 
@@ -175,7 +208,7 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 **Analogia:** a mala está pronta — hora de mostrar ao Cliente A.
 
-**O exemplo rodando:** $S_{ofertado} = \{$4 obrigatórias, Desastres Naturais, Roubo e Furto, Conteúdo Residencial$\}$.
+**O exemplo rodando:** $S_{ofertado} = \lbrace $4 obrigatórias, Desastres Naturais, Roubo e Furto, Conteúdo Residencial$\rbrace $.
 
 **O que entra / o que sai:** entra: $S_{ofertado}$ (Etapa 5). Sai: o mesmo conjunto, exposto ao cliente.
 
@@ -193,28 +226,30 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 ## 8. Traduzindo a edição em dado de treino
 
-**Analogia:** cada cobertura opcional mantida, tirada ou acrescentada vira uma "ficha" no arquivo — as 4 obrigatórias nunca geram ficha nenhuma, porque não há decisão a aprender sobre elas.
+**Analogia:** cada cobertura mantida, tirada ou acrescentada vira uma "ficha" no arquivo — inclusive as obrigatórias, porque "obrigatória" aqui significa que a lei exige que ela seja **ofertada**, não que o cliente seja impedido de recusá-la. Existe decisão real do cliente para aprender, mesmo nessas 4.
 
-**A matemática:** para cada uma das 10 coberturas opcionais visíveis ao cliente (ofertada ou não — como o catálogo é pequeno e totalmente exposto, não há ambiguidade sobre o que o cliente "viu"):
+**A matemática:** para **todas** as 14 coberturas visíveis ao cliente (ofertada ou não — como o catálogo é pequeno e totalmente exposto, não há ambiguidade sobre o que o cliente "viu"):
 
 | $y_i$ | Condição |
 |---|---|
 | 1 | se $i \in S_{final}$ |
 | 0 | caso contrário |
 
-**Por que as 4 obrigatórias nunca entram nesse cálculo.** Se uma cobertura é genuinamente não-editável pelo cliente, $y_i$ para ela seria sempre 1, em toda observação, sem exceção — uma variável que nunca varia não ensina nada a $\theta$, só adiciona ruído à estimativa e um risco desnecessário de quase-separação numérica. As obrigatórias ficam inteiramente fora dos dados de treino.
+**Por que as 4 obrigatórias entram no treino de $\theta$, mesmo nunca precisando do teste de significância.** Como $\theta$ é compartilhado entre todas as 14 coberturas, os dados de aceitação/recusa das obrigatórias ainda ensinam algo útil sobre como perfil de cliente e atributos de cobertura se relacionam — informação que se generaliza para as 10 opcionais, mesmo sem $\eta(i)$ nunca ser usado para decidir se uma obrigatória entra no pacote (ela sempre entra, por exigência legal, independente do que o modelo estimar). Excluir esses dados do treino jogaria fora informação de generalização sem necessidade — a única coisa que as obrigatórias **não** fazem é passar pelo teste da Etapa 5.
 
 **O exemplo rodando:**
 
-| Cobertura opcional | Ofertada? | No final? | $y_i$ |
+| Cobertura | Ofertada? | No final? | $y_i$ |
 |---|---|---|---|
-| Desastres Naturais | sim | sim | **1** |
-| Roubo e Furto | sim | sim | **1** |
-| Conteúdo Residencial | sim | não | **0** |
-| Danos Elétricos | não | sim (espontânea) | **1** |
+| Incêndio (obrigatória) | sim | sim | **1** |
+| Responsabilidade Civil (obrigatória) | sim | não | **0** — cliente recusou, mesmo sendo ofertada por exigência legal |
+| Desastres Naturais (opcional) | sim | sim | **1** |
+| Roubo e Furto (opcional) | sim | sim | **1** |
+| Conteúdo Residencial (opcional) | sim | não | **0** |
+| Danos Elétricos (opcional) | não | sim (espontânea) | **1** |
 | (demais opcionais não ofertadas nem adicionadas) | não | não | **0** |
 
-**O que entra / o que sai:** entra: $S_{ofertado}$, $S_{final}$. Sai: as observações $(x_i, y_i)$ de cada cobertura opcional, marcadas também quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma.
+**O que entra / o que sai:** entra: $S_{ofertado}$, $S_{final}$. Sai: as observações $(x_i, y_i)$ de todas as 14 coberturas, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — lembrando que só as 10 opcionais passam pelo teste da Etapa 5, já que as obrigatórias nunca entram nessa comparação.
 
 ---
 
@@ -224,25 +259,29 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 **A matemática — reajuste de $\theta$:**
 
-$$\hat\theta = \arg\max_\theta \sum_{n=1}^{N} \Big[y_n \log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\|\theta\|^2, \qquad p_n=\sigma(\theta^Tx_n)$$
+$$\hat\theta = \arg\max_\theta \sum_{n=1}^{N} \Big[y_n \log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2, \qquad p_n=\sigma(\theta^Tx_n)$$
 
 somando sobre **todas** as observações de coberturas opcionais acumuladas até o momento — vindas tanto da rota do modelo quanto da parte **não-reservada** das rodadas aleatórias (a fatia $\rho$ reservada para o baseline nunca entra aqui).
 
 **Por que é preciso reprocessar tudo, em vez de simplesmente somar o lote novo ao estado antigo.** Diferente de um ajuste por mínimos quadrados (que teria solução fechada, somável incrementalmente), a regressão logística exige um otimizador a cada reajuste — não existe uma forma de atualizar $\hat\theta$ incrementalmente sem reprocessar o histórico completo. Dado o tamanho do catálogo (10 coberturas opcionais), isso continua sendo computacionalmente trivial — segundos, não minutos — mesmo reprocessando meses de dados.
 
-**A matemática — reajuste do baseline:** recalcula-se $\text{baseline}_i$ e $n_i$ (Etapa 4) usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
+**A matemática — reajuste de $H_\theta$ (a mesma aproximação de Laplace da Etapa 3), no ponto ótimo recém-encontrado:**
+
+$$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_nx_n^{T}$$
+
+**A matemática — reajuste do baseline:** recalcula-se $\text{baseline}_i$, $n_i$, $\text{logit}(\text{baseline}_i)$ e sua variância (Etapa 4) usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
 
 **A divisão entre "dados para $\theta$" e "dados reservados para o baseline" pode ser redesenhada a cada ciclo.** Como o reajuste de $\theta$ é sempre uma computação nova e autocontida, não existe exigência de que a mesma observação histórica vá sempre para o mesmo grupo em diferentes ciclos, nem de que a fração $\rho$ seja fixa ao longo do tempo — só precisa valer, dentro de um mesmo ciclo, que a divisão seja decidida antes de conhecer o resultado observado.
 
-**O que entra / o que sai:** entra: todas as observações acumuladas, já marcadas por origem (Etapa 8). Sai: $\hat\theta$ atualizado e as taxas $\text{baseline}_i$/$\tau_i$ atualizadas, voltando para as Etapas 3 e 4 da próxima rodada.
+**O que entra / o que sai:** entra: todas as observações acumuladas, já marcadas por origem (Etapa 8). Sai: $\hat\theta$, $H_\theta$, $\text{baseline}_i$ e $\text{logit}(\text{baseline}_i)$ atualizados, voltando para as Etapas 3 e 4 da próxima rodada.
 
 ---
 
 ## 10. O ciclo se fecha
 
-**Analogia:** o próximo cliente que chegar já se beneficia do que foi aprendido — a régua $\theta$ está um pouco mais calibrada, e as taxas de referência de cada cobertura têm um pouco mais de precisão.
+**Analogia:** o próximo cliente que chegar já se beneficia do que foi aprendido — a régua $\theta$ está um pouco mais calibrada, e as taxas de referência de cada cobertura têm um pouco mais de precisão, com incertezas um pouco menores dos dois lados.
 
-**A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta$, $\text{baseline}_i$ e $\tau_i$ já atualizados na Etapa 9.
+**A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta$, $H_\theta$, $\text{baseline}_i$ e sua variância já atualizados na Etapa 9.
 
 ---
 
@@ -250,25 +289,25 @@ somando sobre **todas** as observações de coberturas opcionais acumuladas até
 
 ```
 Etapa 0 (setup)
-     │  θ zerado, λ, ε_t, ρ definidos
+     │  θ zerado, λ, ν, ε_t, ρ definidos
      ▼
 Etapa 1 (cliente chega) ──> c
      ▼
 Etapa 2 (explorar ou usar modelo, via Z_t) ──> pacote aleatório (→ Etapa 6) OU segue
      ▼
-Etapa 3 (score da cobertura, regressão logística) ←── θ (Etapa 9 anterior) + c
+Etapa 3 (score da cobertura + H_θ, regressão logística) ←── θ, H_θ (Etapa 9 anterior) + c
      ▼
-Etapa 4 (threshold por cobertura, Wilson) ←── dados reservados acumulados
+Etapa 4 (taxa de referência + sua variância) ←── dados reservados acumulados
      ▼
-Etapa 5 (decisão: obrigatórias + quem passa no threshold) ──> S_ofertado
+Etapa 5 (decisão: obrigatórias + teste de significância) ──> S_ofertado
      ▼
 Etapa 6 (oferta) ──> S_ofertado exposto ao cliente
      ▼
 Etapa 7 (cliente edita) ──> S_final
      ▼
-Etapa 8 (traduz em y_i, só para opcionais, marcado por origem)
+Etapa 8 (traduz em y_i, todas as 14, marcado por origem)
      ▼
-Etapa 9 (reajuste em lote: θ e baseline/τ, separadamente) ──> novo θ, baseline, τ
+Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, H_θ, baseline
      │
      └──────────────► volta para a Etapa 3 da próxima rodada (Etapa 10)
 ```
@@ -283,9 +322,10 @@ Etapa 9 (reajuste em lote: θ e baseline/τ, separadamente) ──> novo θ, bas
 | MAP com priori gaussiana | estima $\theta$ de forma regularizada, protegendo contra estimativas extremas com poucos dados |
 | $\theta$ compartilhado entre as 10 opcionais | permite generalizar entre coberturas parecidas, em vez de aprender cada uma isoladamente do zero |
 | $Z_t\sim\text{Bernoulli}(\epsilon_t)$ | única fonte de aleatoriedade deliberada — garante que toda cobertura continue sendo testada, mesmo as já bem avaliadas |
-| $\tau_i$ via Wilson | threshold calibrado a partir dos próprios dados, sem exigir peso de negócio arbitrário; mais conservador quando há poucos dados, convergindo para o baseline puro conforme a amostra cresce |
-| Reserva $\rho$ para o baseline | garante que a comparação $\hat p(i)$ vs. $\tau_i$ seja entre duas estimativas estatisticamente independentes |
-| Exclusão das obrigatórias do treino | evita ruído e risco de quase-separação numérica em variáveis que nunca têm variação para aprender |
+| Piso de curvatura $\nu$ em $H_\theta$ | evita que itens com histórico consistentemente extremo parem de reduzir sua própria incerteza — mantém a variância encolhendo com mais dados, mesmo em regiões de alta certeza |
+| Teste de significância ($D(i)$ vs. incerteza combinada) | decide se a diferença entre modelo e referência é grande o suficiente para confiar nela, sem exigir peso de negócio arbitrário e sem depender só de uma comparação pontual |
+| Reserva $\rho$ para o baseline | garante que a comparação entre $\eta(i)$ e o baseline seja entre duas estimativas estatisticamente independentes |
+| Obrigatórias incluídas no treino, fora do teste | aproveita a variação real de aceitação/recusa das obrigatórias para melhorar a generalização de $\theta$, sem nunca usar o teste para decidir se elas entram no pacote |
 | Reajuste em lote completo | necessário porque a regressão logística não tem solução fechada — não é um detalhe de implementação, é uma propriedade do modelo |
 
 ---
@@ -294,10 +334,11 @@ Etapa 9 (reajuste em lote: θ e baseline/τ, separadamente) ──> novo θ, bas
 
 | Parâmetro | Onde aparece | O que controla | Ponto de partida sugerido |
 |---|---|---|---|
-| $\lambda$ (regularização) | Etapas 0 e 9 | O quanto $\theta$ fica "presa" perto de zero antes de haver evidência forte | Testar valores entre 0,5 e 2,0 |
+| $\lambda$ (regularização) | Etapas 0, 3 e 9 | O quanto $\theta$ fica "presa" perto de zero antes de haver evidência forte | Testar valores entre 0,5 e 2,0 |
+| $\nu$ (piso de curvatura) | Etapas 3 e 9 | Evita que a variância de itens muito certos pare de encolher com mais dados | Algo entre 0,02 e 0,10 (referência: $p(1-p)$ tem máximo 0,25 em $p=0{,}5$) |
 | $\epsilon_t$ e seu cronograma | Etapa 2 | Por quanto tempo, e com que intensidade, a oferta aleatória continua acontecendo | Começar próximo de 1,0 e decair até um piso pequeno (ex.: 0,05) — nunca chegar a zero |
-| $\rho$ (fração reservada para o baseline) | Etapas 4 e 9 | Quanto do dado aleatório fica reservado só para calibrar o threshold, em vez de treinar $\theta$ | Um ponto de partida razoável é 30%, ajustável conforme o volume de tráfego |
-| $z$ (nível de confiança de Wilson) | Etapa 4 | Quão conservador é o threshold em relação ao baseline puro | 1,645 (95% de confiança, um lado) é um ponto de partida padrão |
-| Lista de coberturas obrigatórias | Etapas 5 e 8 | Quais coberturas nunca passam pela decisão do modelo | Definida pela equipe de produto, a partir das regras contratuais do produto |
+| $\rho$ (fração reservada para o baseline) | Etapas 4 e 9 | Quanto do dado aleatório fica reservado só para calibrar a referência, em vez de treinar $\theta$ | Um ponto de partida razoável é 30%, ajustável conforme o volume de tráfego |
+| $z$ (nível de confiança do teste) | Etapa 5 | Quão conservadora é a exigência de significância para ofertar | 1,645 (95% de confiança, um lado) é um ponto de partida padrão |
+| Lista de coberturas obrigatórias | Etapas 5 e 8 | Quais coberturas nunca passam pelo teste do modelo | Definida pela equipe de produto, a partir das regras contratuais do produto |
 | Dimensões semânticas de $f_i$ | Etapa 3 | Quais atributos descrevem cada cobertura | Definidas com a equipe atuarial (categoria de risco, faixa de prêmio, frequência de sinistro) |
 | Dimensões do perfil do cliente $c$ | Etapa 1 | Quais atributos do cliente entram no modelo | Definidas com a equipe de dados, a partir do que já está disponível no cadastro |
