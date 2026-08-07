@@ -91,35 +91,11 @@ $$\hat p(i) = \sigma\big(\eta(i)\big) = \frac{1}{1+e^{-\eta(i)}}$$
 | $\sigma(\cdot)$ | o funil logístico — converte o log-odds de volta em probabilidade, garantindo o resultado sempre entre 0 e 1 |
 | $\hat p(i)$ | a **recompensa esperada**: a estimativa calibrada do modelo para a propensão real de aceitação — não inflada por nenhum termo de exploração |
 
-**De onde vem $\theta$: a estimativa de máxima verossimilhança a posteriori (MAP).** $\theta$ não é ajustado minimizando erro quadrático — é ajustado maximizando a verossimilhança de observações binárias (Bernoulli), combinada com a priori gaussiana definida na Etapa 0. Pela regra de Bayes:
+**De onde vêm $\theta$ e $H_\theta$, e por que a recompensa esperada já é uma probabilidade calibrada.** $\theta$ e $H_\theta$ não são calculados aqui — chegam prontos do reajuste mais recente (Etapa 9), onde o desenvolvimento completo é apresentado. O que importa para esta etapa é entender **por que** $\hat p(i)=\sigma(\theta^Tx(i))$ pode ser lida como uma probabilidade de verdade, e não um número arbitrário: $\theta$ é estimado maximizando diretamente a verossimilhança de um modelo probabilístico bem especificado para dados binários (não minimizando erro quadrático, como seria numa regressão comum) — é essa forma de ajuste que garante, sob boas condições, que a recompensa esperada já saia calibrada, sem precisar de nenhuma correção posterior. $H_\theta$, por sua vez, mede a incerteza restante sobre $\theta$ — e dela deriva-se $\text{Var}[\eta(i)] = x(i)^TH_\theta^{-1}x(i)$, a incerteza sobre o score daquele cliente para aquela cobertura, usada no teste de significância da Etapa 5.
 
-$$P(\theta\mid\text{dados}) \propto \underbrace{P(\text{dados}\mid\theta)}_{\text{verossimilhança}} \times \underbrace{P(\theta)}_{\text{priori}}$$
-
-A verossimilhança de uma única observação $(x_n, y_n)$, com $y_n\in\lbrace 0,1\rbrace $ e $p_n=\sigma(\theta^Tx_n)$, segue uma distribuição de Bernoulli: $P(y_n\mid\theta) = p_n^{y_n}(1-p_n)^{1-y_n}$ — a expressão vale $p_n$ quando $y_n=1$ e $1-p_n$ quando $y_n=0$, cobrindo os dois casos numa única fórmula. Tomando o logaritmo da verossimilhança conjunta de todas as observações e somando o logaritmo da priori, chega-se à log-posteriori, a menos de uma constante aditiva que não depende de $\theta$:
-
-$$\log P(\theta\mid\text{dados}) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2 + \text{constante}$$
-
-$$\hat\theta = \arg\max_\theta \log P(\theta\mid\text{dados})$$
-
-**Por que isso não tem solução fechada.** Combinar uma verossimilhança de Bernoulli com uma priori gaussiana não produz uma posteriori de nenhuma família conhecida — essa não é uma peculiaridade deste problema específico, é uma propriedade da regressão logística bayesiana em geral, bem documentada na literatura estatística clássica. Como $p_n=\sigma(\theta^Tx_n)$ entra no logaritmo de forma não-linear, a derivada da log-posteriori em relação a $\theta$ também é não-linear — não dá para isolar $\theta$ algebricamente. Por isso, encontrar $\hat\theta$ exige um otimizador numérico iterativo (o gradiente usado é $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$), não uma única inversão de matriz.
-
-**O exemplo rodando:** suponha que, para o Cliente A, o modelo já calculou $\eta(\text{Desastres Naturais})=0{,}90$. A recompensa esperada é:
+**O exemplo rodando:** suponha que, para o Cliente A, o modelo já calculou $\eta(\text{Desastres Naturais})=0{,}90$, com $\text{Var}[\eta(\text{Desastres})] = 0{,}05$ (uma incerteza relativamente baixa, refletindo que $\theta$ já viu bastante dado informativo nessa região do espaço de contexto). A recompensa esperada é:
 
 $$\hat p(\text{Desastres Naturais}) = \sigma(0{,}90) \approx 0{,}71$$
-
-**A incerteza sobre $\eta(i)$: aproximação de Laplace.** Como a posteriori não tem forma fechada (não é conjugada), aproxima-se a incerteza em torno de $\hat\theta$ por uma gaussiana local, com covariância dada pelo inverso da curvatura da log-posteriori no ponto ótimo:
-
-$$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_nx_n^{T}$$
-
-$$\text{Var}\big[\eta(i)\big] = x(i)^{T}H_\theta^{-1}x(i)$$
-
-| Símbolo | Descrição |
-|---|---|
-| $p_n(1-p_n)$ | quanto cada observação de treino contribui para reduzir a incerteza — máximo quando $p_n\approx 0{,}5$, mínimo perto de 0 ou 1 |
-| $\nu$ | um piso mínimo para esse peso — sem ele, itens com histórico consistentemente extremo (quase sempre aceitos ou quase sempre rejeitados) parariam de reduzir sua própria incerteza, mesmo com muitos dados confirmando o mesmo padrão repetidamente. É o piso que garante a variância continuar encolhendo conforme mais dados chegam, inclusive nessas regiões |
-| $\text{Var}[\eta(i)]$ | a incerteza sobre o score log-odds daquele cliente para aquela cobertura — usada na Etapa 5 para o teste de significância |
-
-**O exemplo rodando (continuação):** suponha $\text{Var}[\eta(\text{Desastres})] = 0{,}05$ — uma incerteza relativamente baixa, refletindo que $\theta$ já viu bastante dado informativo nessa região do espaço de contexto.
 
 **O que entra / o que sai:** entra: $c$, $\theta$ e $H_\theta$ (do reajuste mais recente — Etapa 9). Sai: $\eta(i)$ e $\text{Var}[\eta(i)]$ para cada uma das 10 coberturas opcionais, usados na Etapa 5.
 
@@ -170,7 +146,7 @@ $$\text{Var}[D(i)] = \text{Var}[\eta(i)] + \text{Var}\big[\text{logit}(\text{bas
 
 $$D(i) - z\sqrt{\text{Var}[D(i)]} > 0, \qquad z=1{,}645 \text{ (95 por cento de confiança, um lado)}$$
 
-$$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \lbrace \text{10 opcionais}\rbrace : D(i) - z\sqrt{\text{Var}[D(i)]} > 0 \Big\rbrace $$
+$$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \lbrace \text{10 opcionais}\rbrace : D(i) - z\sqrt{\text{Var}[D(i)]} > 0 \Big\rbrace$$
 
 | Símbolo | Descrição |
 |---|---|
@@ -208,7 +184,7 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 **Analogia:** a mala está pronta — hora de mostrar ao Cliente A.
 
-**O exemplo rodando:** $S_{ofertado} = \lbrace $4 obrigatórias, Desastres Naturais, Roubo e Furto, Conteúdo Residencial$\rbrace $.
+**O exemplo rodando:** $S_{ofertado} = \lbrace$4 obrigatórias, Desastres Naturais, Roubo e Furto, Conteúdo Residencial$\rbrace$.
 
 **O que entra / o que sai:** entra: $S_{ofertado}$ (Etapa 5). Sai: o mesmo conjunto, exposto ao cliente.
 
@@ -257,17 +233,28 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 **Analogia:** no fim do ciclo (diário, ou por lote de N clientes), a régua $\theta$ é recalibrada do zero usando todas as fichas acumuladas desde sempre — e, separadamente, as taxas de referência de cada cobertura também são recalculadas, usando só a fatia que sempre foi reservada para isso.
 
-**A matemática — reajuste de $\theta$:**
+**A matemática — reajuste de $\theta$, por máxima verossimilhança a posteriori (MAP).** $\theta$ não é ajustado minimizando erro quadrático — é ajustado maximizando a verossimilhança de observações binárias (Bernoulli), combinada com a priori gaussiana definida na Etapa 0. Pela regra de Bayes:
+
+$$P(\theta\mid\text{dados}) \propto \underbrace{P(\text{dados}\mid\theta)}_{\text{verossimilhança}} \times \underbrace{P(\theta)}_{\text{priori}}$$
+
+A verossimilhança de uma única observação $(x_n, y_n)$, com $y_n\in\lbrace 0,1\rbrace$ e $p_n=\sigma(\theta^Tx_n)$, segue uma distribuição de Bernoulli: $P(y_n\mid\theta) = p_n^{y_n}(1-p_n)^{1-y_n}$ — a expressão vale $p_n$ quando $y_n=1$ e $1-p_n$ quando $y_n=0$, cobrindo os dois casos numa única fórmula. Tomando o logaritmo da verossimilhança conjunta de todas as observações e somando o logaritmo da priori, chega-se à log-posteriori, a menos de uma constante aditiva que não depende de $\theta$:
+
+$$\log P(\theta\mid\text{dados}) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2 + \text{constante}$$
 
 $$\hat\theta = \arg\max_\theta \sum_{n=1}^{N} \Big[y_n \log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2, \qquad p_n=\sigma(\theta^Tx_n)$$
 
-somando sobre **todas** as observações de coberturas opcionais acumuladas até o momento — vindas tanto da rota do modelo quanto da parte **não-reservada** das rodadas aleatórias (a fatia $\rho$ reservada para o baseline nunca entra aqui).
+somando sobre **todas** as observações de coberturas opcionais acumuladas até o momento — vindas tanto da rota do modelo quanto da parte **não-reservada** das rodadas aleatórias (a fatia $\rho$ reservada para o baseline nunca entra aqui). É essa forma de ajuste — otimizar diretamente um modelo probabilístico bem especificado, em vez de uma métrica substituta como erro quadrático — que garante, sob boas condições, que $\sigma(\hat\theta^Tx(i))$ já saia calibrada como probabilidade (a propriedade usada, sem prova, na Etapa 3).
 
-**Por que é preciso reprocessar tudo, em vez de simplesmente somar o lote novo ao estado antigo.** Diferente de um ajuste por mínimos quadrados (que teria solução fechada, somável incrementalmente), a regressão logística exige um otimizador a cada reajuste — não existe uma forma de atualizar $\hat\theta$ incrementalmente sem reprocessar o histórico completo. Dado o tamanho do catálogo (10 coberturas opcionais), isso continua sendo computacionalmente trivial — segundos, não minutos — mesmo reprocessando meses de dados.
+**Por que é preciso reprocessar tudo, em vez de simplesmente somar o lote novo ao estado antigo.** Combinar uma verossimilhança de Bernoulli com uma priori gaussiana não produz uma posteriori de nenhuma família conhecida — essa não é uma peculiaridade deste problema específico, é uma propriedade da regressão logística bayesiana em geral, bem documentada na literatura estatística clássica. Como $p_n=\sigma(\theta^Tx_n)$ entra no logaritmo de forma não-linear, a derivada da log-posteriori em relação a $\theta$ também é não-linear — não dá para isolar $\theta$ algebricamente, diferente de um ajuste por mínimos quadrados (que teria solução fechada, somável incrementalmente). Por isso, encontrar $\hat\theta$ exige um otimizador numérico iterativo a cada reajuste (o gradiente usado é $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$) — não existe forma de atualizar $\hat\theta$ incrementalmente sem reprocessar o histórico completo. Dado o tamanho do catálogo (10 coberturas opcionais), isso continua sendo computacionalmente trivial — segundos, não minutos — mesmo reprocessando meses de dados.
 
-**A matemática — reajuste de $H_\theta$ (a mesma aproximação de Laplace da Etapa 3), no ponto ótimo recém-encontrado:**
+**A matemática — reajuste de $H_\theta$, via aproximação de Laplace, no ponto ótimo recém-encontrado.** Como a posteriori não tem forma fechada (não é conjugada), aproxima-se a incerteza em torno de $\hat\theta$ por uma gaussiana local, com covariância dada pelo inverso da curvatura da log-posteriori:
 
 $$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_nx_n^{T}$$
+
+| Símbolo | Descrição |
+|---|---|
+| $p_n(1-p_n)$ | quanto cada observação de treino contribui para reduzir a incerteza — máximo quando $p_n\approx 0{,}5$, mínimo perto de 0 ou 1 |
+| $\nu$ | um piso mínimo para esse peso — sem ele, itens com histórico consistentemente extremo (quase sempre aceitos ou quase sempre rejeitados) parariam de reduzir sua própria incerteza, mesmo com muitos dados confirmando o mesmo padrão repetidamente. É o piso que garante a variância continuar encolhendo conforme mais dados chegam, inclusive nessas regiões |
 
 **A matemática — reajuste do baseline:** recalcula-se $\text{baseline}_i$, $n_i$, $\text{logit}(\text{baseline}_i)$ e sua variância (Etapa 4) usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
 
