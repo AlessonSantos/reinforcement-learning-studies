@@ -107,28 +107,28 @@ $$\hat p(\text{Desastres Naturais}) = \sigma(0{,}90) \approx 0{,}71$$
 
 **Por que não usar 0,5 fixo para todas as coberturas.** Um ponto de corte fixo pressupõe implicitamente que aceitar e rejeitar uma oferta têm o mesmo peso de decisão para toda cobertura — uma suposição que não há motivo para ser verdadeira: cada cobertura pode ter uma taxa de aceitação "de base" bem diferente das demais. Em vez de impor um valor de negócio arbitrário, a abordagem adotada aqui deriva a referência diretamente dos dados: **só vale a pena confiar na segmentação do modelo para um cliente específico se a propensão estimada para ele for genuinamente maior do que a taxa de aceitação típica daquela cobertura**, quando ofertada sem nenhuma seleção — "genuinamente maior" sendo decidido por um teste de significância (Etapa 5), não por comparação direta de dois números.
 
-**A matemática — a taxa de referência e sua incerteza:**
+**A matemática — a taxa de referência (o "baseline") e sua incerteza.** Para abreviar a notação nas fórmulas seguintes, chamamos essa taxa de $b_i$:
 
-$$\text{baseline}_i = \frac{\text{aceitações de } i \text{ nas rodadas reservadas}}{n_i}$$
+$$b_i = \frac{\text{aceitações de } i \text{ nas rodadas reservadas}}{n_i}$$
 
 calculada **só** sobre uma fração $\rho$ das rodadas aleatórias ($Z_t=1$), reservada exclusivamente para este cálculo — nunca usada para treinar $\theta$ (Etapa 9), e nunca misturada com rodadas da rota do modelo.
 
-$$\text{logit}(\text{baseline}_i) = \log\left(\frac{\text{baseline}_i}{1-\text{baseline}_i}\right), \qquad \text{Var}\big[\text{logit}(\text{baseline}_i)\big] \approx \frac{1}{n_i\cdot\text{baseline}_i\cdot(1-\text{baseline}_i)}$$
+$$\text{logit}(b_i) = \log\left(\frac{b_i}{1-b_i}\right), \qquad \text{Var}\big[\text{logit}(b_i)\big] \approx \frac{1}{n_i b_i(1-b_i)}$$
 
 | Símbolo | Descrição |
 |---|---|
 | $n_i$ | número de observações reservadas para a cobertura $i$ |
-| $\text{baseline}_i$ | proporção amostral pura — frequência de aceitação sem nenhuma seleção |
-| $\text{logit}(\text{baseline}_i)$ | a mesma taxa de referência, convertida para a escala log-odds — a mesma escala em que $\eta(i)$ vive, necessária para comparar os dois de forma consistente na Etapa 5 |
-| $\text{Var}[\text{logit}(\text{baseline}_i)]$ | a incerteza dessa taxa de referência, via método delta — maior quando $n_i$ é pequeno, ou quando $\text{baseline}_i$ está perto de 0 ou 1 |
+| $b_i$ | o baseline — proporção amostral pura, frequência de aceitação sem nenhuma seleção |
+| $\text{logit}(b_i)$ | a mesma taxa de referência, convertida para a escala log-odds — a mesma escala em que $\eta(i)$ vive, necessária para comparar os dois de forma consistente na Etapa 5 |
+| $\text{Var}[\text{logit}(b_i)]$ | a incerteza dessa taxa de referência, via método delta — maior quando o número de observações reservadas é pequeno, ou quando $b_i$ está perto de 0 ou 1 |
 
 **Por que essa reserva é necessária, e por que a divisão precisa ser independente do resultado.** Se as mesmas observações alimentassem tanto o treino de $\theta$ quanto o cálculo do baseline, os dois deixariam de ser estatisticamente independentes — a comparação entre eles ficaria enviesada. A separação evita isso por construção. A regra que decide se uma rodada aleatória vai para a reserva do baseline ou para o treino de $\theta$ precisa depender só de algo definido **antes** de conhecer a resposta do cliente (por exemplo, um identificador da rodada, nunca do resultado observado).
 
-**O exemplo rodando:** suponha que, na fatia reservada, "Desastres Naturais" foi ofertada aleatoriamente $n_i=120$ vezes, com $\text{baseline}_i=0{,}40$ (40% de aceitação):
+**O exemplo rodando:** suponha que, na fatia reservada, "Desastres Naturais" foi ofertada aleatoriamente $n_i=120$ vezes, com $b_i=0{,}40$ (40% de aceitação):
 
 $$\text{logit}(0{,}40) \approx -0{,}405, \qquad \text{Var}\big[\text{logit}(0{,}40)\big] = \frac{1}{120\times 0{,}40\times 0{,}60} \approx 0{,}0347$$
 
-**O que entra / o que sai:** entra: as observações reservadas de cada cobertura (acumuladas desde o início, atualizadas na Etapa 9). Sai: $\text{logit}(\text{baseline}_i)$ e sua variância, para cada uma das 10 coberturas opcionais, usados na Etapa 5.
+**O que entra / o que sai:** entra: as observações reservadas de cada cobertura (acumuladas desde o início, atualizadas na Etapa 9). Sai: $\text{logit}(b_i)$ e sua variância, para cada uma das 10 coberturas opcionais, usados na Etapa 5.
 
 ---
 
@@ -138,9 +138,9 @@ $$\text{logit}(0{,}40) \approx -0{,}405, \qquad \text{Var}\big[\text{logit}(0{,}
 
 **A matemática — a diferença e sua incerteza combinada:**
 
-$$D(i) = \eta(i) - \text{logit}(\text{baseline}_i)$$
+$$D(i) = \eta(i) - \text{logit}(b_i)$$
 
-$$\text{Var}[D(i)] = \text{Var}[\eta(i)] + \text{Var}\big[\text{logit}(\text{baseline}_i)\big]$$
+$$\text{Var}[D(i)] = \text{Var}[\eta(i)] + \text{Var}\big[\text{logit}(b_i)\big]$$
 
 **A regra de decisão** — oferta se o limite inferior de confiança da diferença for maior que zero:
 
@@ -152,11 +152,11 @@ $$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \l
 |---|---|
 | $D(i)$ | a diferença entre o score do modelo e a referência, na mesma escala (log-odds) |
 | $\text{Var}[D(i)]$ | soma das duas incertezas — a de $\eta(i)$ (Etapa 3, via $H_\theta$) e a do baseline (Etapa 4, via método delta) |
-| A regra | exige não só que $\hat p(i)$ pareça maior que $\text{baseline}_i$, mas que essa diferença resista a subtrair uma margem proporcional à incerteza combinada — quanto mais incerto qualquer um dos dois lados, maior a margem exigida |
+| A regra | exige não só que $\hat p(i)$ pareça maior que $b_i$, mas que essa diferença resista a subtrair uma margem proporcional à incerteza combinada — quanto mais incerto qualquer um dos dois lados, maior a margem exigida |
 
 **Por que somar as duas variâncias, e não comparar cada lado separadamente.** Tratar a incerteza de $\eta(i)$ e a incerteza do baseline como dois intervalos separados (checando se eles não se sobrepõem) seria estatisticamente mais conservador do que necessário — não equivale a um teste de diferença apropriado. Somar as variâncias e testar a diferença diretamente é a forma correta: usa exatamente a informação necessária, nem mais, nem menos.
 
-**O exemplo rodando:** para Desastres Naturais, com $\eta=0{,}90, \text{Var}[\eta]=0{,}05$ (Etapa 3), e $\text{logit}(\text{baseline})=-0{,}405, \text{Var}[\text{logit}(\text{baseline})]=0{,}0347$ (Etapa 4):
+**O exemplo rodando:** para Desastres Naturais, com $\eta=0{,}90, \text{Var}[\eta]=0{,}05$ (Etapa 3), e $\text{logit}(b)=-0{,}405, \text{Var}[\text{logit}(b)]=0{,}0347$ (Etapa 4):
 
 $$D(\text{Desastres}) = 0{,}90 - (-0{,}405) = 1{,}305$$
 
@@ -164,19 +164,19 @@ $$\text{Var}[D] = 0{,}05 + 0{,}0347 = 0{,}0847, \qquad \sqrt{\text{Var}[D]} \app
 
 $$D - z\sqrt{\text{Var}[D]} = 1{,}305 - 1{,}645\times 0{,}291 \approx 0{,}826 > 0 \quad\Rightarrow\quad \textbf{oferta}$$
 
-Para Danos Elétricos, suponha $\eta=0{,}201, \text{Var}[\eta]=0{,}09$ (uma cobertura ainda menos testada), e $\text{baseline}=0{,}50$ com $n=80$ (logo $\text{logit}(\text{baseline})=0, \text{Var}[\text{logit}(\text{baseline})]=0{,}05$):
+Para Danos Elétricos, suponha $\eta=0{,}201, \text{Var}[\eta]=0{,}09$ (uma cobertura ainda menos testada), e $b=0{,}50$ com $n=80$ (logo $\text{logit}(b)=0, \text{Var}[\text{logit}(b)]=0{,}05$):
 
 $$D(\text{Danos Elétricos}) = 0{,}201 - 0 = 0{,}201, \qquad \text{Var}[D] = 0{,}09+0{,}05=0{,}14$$
 
 $$D - z\sqrt{\text{Var}[D]} = 0{,}201 - 1{,}645\times 0{,}374 \approx -0{,}414 < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
 
-Mesmo com $\eta(\text{Danos Elétricos})>\text{logit}(\text{baseline})$ (a estimativa pontual do modelo é maior que a referência), a diferença não é grande o suficiente diante da incerteza combinada — o teste corretamente recusa confiar nela ainda.
+Mesmo com $\eta(\text{Danos Elétricos})>\text{logit}(b)$ (a estimativa pontual do modelo é maior que a referência), a diferença não é grande o suficiente diante da incerteza combinada — o teste corretamente recusa confiar nela ainda.
 
 $$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \lbrace \text{Desastres Naturais}, \ldots\rbrace$$
 
 O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ fixo em nenhum lugar da equação.
 
-**O que entra / o que sai:** entra: $\eta(i), \text{Var}[\eta(i)]$ (Etapa 3) e $\text{logit}(\text{baseline}_i), \text{Var}[\text{logit}(\text{baseline}_i)]$ (Etapa 4), para cada opcional. Sai: $S_{ofertado}$.
+**O que entra / o que sai:** entra: $\eta(i)$ e sua incerteza (Etapa 3), e a taxa de referência com sua incerteza (Etapa 4), para cada opcional. Sai: $S_{ofertado}$.
 
 ---
 
@@ -243,7 +243,9 @@ somando sobre **todas** as observações acumuladas até o momento — vindas ta
 
 O ponto de partida é a **regra de Bayes**, aplicada a $\theta$ em vez de a um evento simples:
 
-$$\underbrace{P(\theta \mid \text{dados})}_{\text{posteriori}} \propto \underbrace{P(\text{dados} \mid \theta)}_{\text{verossimilhança}} \times \underbrace{P(\theta)}_{\text{priori}}$$
+$$P(\theta \mid \text{dados}) \propto P(\text{dados} \mid \theta) \times P(\theta)$$
+
+(posteriori $\propto$ verossimilhança $\times$ priori)
 
 | Termo | O que significa aqui |
 |---|---|
@@ -326,11 +328,11 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_n x_n^{
 
 **Por que essa correção foi escolhida em vez de uma alternativa por contagem bruta:** o sistema é contextual — o mesmo item aparece em contextos diferentes (perfis de cliente diferentes). Uma correção baseada em "contar quantas vezes vi esse item" jogaria fora a generalização entre contextos parecidos, que é o motivo de $\theta$ ser compartilhado entre as 10 coberturas desde o início. O piso de curvatura, em vez disso, corrige o mecanismo exato onde o problema nasce (o peso da observação dentro de $H_\theta$), sem sair da geometria contextual do modelo.
 
-**A matemática — reajuste do baseline:** recalcula-se $\text{baseline}_i, n_i, \text{logit}(\text{baseline}_i)$ e sua variância (Etapa 4) usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
+**A matemática — reajuste do baseline:** recalcula-se a taxa de referência de cada cobertura e sua variância (Etapa 4), usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
 
 **A divisão entre "dados para $\theta$" e "dados reservados para o baseline" pode ser redesenhada a cada ciclo.** Como o reajuste de $\theta$ é sempre uma computação nova e autocontida, não existe exigência de que a mesma observação histórica vá sempre para o mesmo grupo em diferentes ciclos, nem de que a fração $\rho$ seja fixa ao longo do tempo — só precisa valer, dentro de um mesmo ciclo, que a divisão seja decidida antes de conhecer o resultado observado.
 
-**O que entra / o que sai:** entra: todas as observações acumuladas, já marcadas por origem (Etapa 8). Sai: $\hat\theta, H_\theta, \text{baseline}_i, \text{logit}(\text{baseline}_i)$ atualizados, voltando para as Etapas 3 e 4 da próxima rodada.
+**O que entra / o que sai:** entra: todas as observações acumuladas, já marcadas por origem (Etapa 8). Sai: $\hat\theta$ e $H_\theta$ atualizados, além da taxa de referência de cada cobertura e sua incerteza, voltando para as Etapas 3 e 4 da próxima rodada.
 
 ---
 
@@ -338,7 +340,7 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_n x_n^{
 
 **Analogia:** o próximo cliente que chegar já se beneficia do que foi aprendido — a régua $\theta$ está um pouco mais calibrada, e as taxas de referência de cada cobertura têm um pouco mais de precisão, com incertezas um pouco menores dos dois lados.
 
-**A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta, H_\theta, \text{baseline}_i$ e sua variância já atualizados na Etapa 9.
+**A matemática:** volta-se à Etapa 1 com um novo cliente, usando $\hat\theta, H_\theta, b_i$ e sua variância já atualizados na Etapa 9.
 
 ---
 
