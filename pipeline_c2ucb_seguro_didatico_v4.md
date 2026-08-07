@@ -229,32 +229,102 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 ---
 
-## 9. Atualização em lote
+## 9. Atualização em lote — e o achado importante sobre itens "quase certos"
 
 **Analogia:** no fim do ciclo (diário, ou por lote de N clientes), a régua $\theta$ é recalibrada do zero usando todas as fichas acumuladas desde sempre — e, separadamente, as taxas de referência de cada cobertura também são recalculadas, usando só a fatia que sempre foi reservada para isso.
 
-**A matemática — reajuste de $\theta$, por máxima verossimilhança a posteriori (MAP).** $\theta$ não é ajustado minimizando erro quadrático — é ajustado maximizando a verossimilhança de observações binárias (Bernoulli), combinada com a priori gaussiana definida na Etapa 0. Pela regra de Bayes:
-
-$$P(\theta\mid\text{dados}) \propto \underbrace{P(\text{dados}\mid\theta)}_{\text{verossimilhança}} \times \underbrace{P(\theta)}_{\text{priori}}$$
-
-A verossimilhança de uma única observação $(x_n, y_n)$, com $y_n\in\lbrace 0,1\rbrace$ e $p_n=\sigma(\theta^Tx_n)$, segue uma distribuição de Bernoulli: $P(y_n\mid\theta) = p_n^{y_n}(1-p_n)^{1-y_n}$ — a expressão vale $p_n$ quando $y_n=1$ e $1-p_n$ quando $y_n=0$, cobrindo os dois casos numa única fórmula. Tomando o logaritmo da verossimilhança conjunta de todas as observações e somando o logaritmo da priori, chega-se à log-posteriori, a menos de uma constante aditiva que não depende de $\theta$:
-
-$$\log P(\theta\mid\text{dados}) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2 + \text{constante}$$
+**A matemática do ajuste (MAP com prior gaussiano):**
 
 $$\hat\theta = \arg\max_\theta \sum_{n=1}^{N} \Big[y_n \log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2, \qquad p_n=\sigma(\theta^Tx_n)$$
 
-somando sobre **todas** as observações de coberturas opcionais acumuladas até o momento — vindas tanto da rota do modelo quanto da parte **não-reservada** das rodadas aleatórias (a fatia $\rho$ reservada para o baseline nunca entra aqui). É essa forma de ajuste — otimizar diretamente um modelo probabilístico bem especificado, em vez de uma métrica substituta como erro quadrático — que garante, sob boas condições, que $\sigma(\hat\theta^Tx(i))$ já saia calibrada como probabilidade (a propriedade usada, sem prova, na Etapa 3).
+somando sobre **todas** as observações acumuladas até o momento — vindas tanto da rota do modelo quanto da parte **não-reservada** das rodadas aleatórias (a fatia $\rho$ reservada para o baseline, Etapa 4, nunca entra aqui).
 
-**Por que é preciso reprocessar tudo, em vez de simplesmente somar o lote novo ao estado antigo.** Combinar uma verossimilhança de Bernoulli com uma priori gaussiana não produz uma posteriori de nenhuma família conhecida — essa não é uma peculiaridade deste problema específico, é uma propriedade da regressão logística bayesiana em geral, bem documentada na literatura estatística clássica. Como $p_n=\sigma(\theta^Tx_n)$ entra no logaritmo de forma não-linear, a derivada da log-posteriori em relação a $\theta$ também é não-linear — não dá para isolar $\theta$ algebricamente, diferente de um ajuste por mínimos quadrados (que teria solução fechada, somável incrementalmente). Por isso, encontrar $\hat\theta$ exige um otimizador numérico iterativo a cada reajuste (o gradiente usado é $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$) — não existe forma de atualizar $\hat\theta$ incrementalmente sem reprocessar o histórico completo. Dado o tamanho do catálogo (10 coberturas opcionais), isso continua sendo computacionalmente trivial — segundos, não minutos — mesmo reprocessando meses de dados.
+**De onde vem essa fórmula, passo a passo:**
 
-**A matemática — reajuste de $H_\theta$, via aproximação de Laplace, no ponto ótimo recém-encontrado.** Como a posteriori não tem forma fechada (não é conjugada), aproxima-se a incerteza em torno de $\hat\theta$ por uma gaussiana local, com covariância dada pelo inverso da curvatura da log-posteriori:
+O ponto de partida é a **regra de Bayes**, aplicada a $\theta$ em vez de a um evento simples:
 
-$$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_nx_n^{T}$$
+$$\underbrace{P(\theta \mid \text{dados})}_{\text{posteriori}} \propto \underbrace{P(\text{dados} \mid \theta)}_{\text{verossimilhança}} \times \underbrace{P(\theta)}_{\text{priori}}$$
+
+| Termo | O que significa aqui |
+|---|---|
+| **Priori** $P(\theta)$ | o que acreditávamos sobre $\theta$ **antes** de ver qualquer dado — no nosso caso, $\theta \sim \mathcal{N}(0, \lambda^{-1}I)$: um "chute" de que os valores de $\theta$ tendem a ficar perto de zero, com $\lambda$ controlando o quão fortemente essa crença é mantida |
+| **Verossimilhança** $P(\text{dados}\mid\theta)$ | o quão prováveis são os dados observados, **assumindo** um valor particular de $\theta$ — é a peça que faz o modelo "aprender" a partir dos dados |
+| **Posteriori** $P(\theta\mid\text{dados})$ | a crença atualizada sobre $\theta$, depois de combinar o que já se sabia (priori) com o que os dados mostraram (verossimilhança) — é essa distribuição que queremos maximizar para achar $\hat\theta$ |
+
+**Passo 1 — a verossimilhança de uma única observação.** Como $y_n \in \lbrace 0,1\rbrace$, cada observação segue uma distribuição de **Bernoulli** com parâmetro $p_n$ (a probabilidade de $y_n=1$). A fórmula fechada de uma Bernoulli é:
+
+$$P(y_n \mid \theta) = p_n^{y_n}(1-p_n)^{1-y_n}$$
+
+Repare no truque dessa fórmula: se $y_n=1$, o expoente de $(1-p_n)$ vira zero, então $(1-p_n)^0=1$ e sobra só $p_n$; se $y_n=0$, o expoente de $p_n$ vira zero e sobra só $(1-p_n)$. Ou seja, essa única expressão cobre os dois casos possíveis ao mesmo tempo.
+
+**Passo 2 — a verossimilhança de todas as $N$ observações juntas.** Assumindo que cada observação é independente das demais (dado $\theta$), a verossimilhança conjunta é o **produto** das verossimilhanças individuais:
+
+$$P(\text{dados}\mid\theta) = \prod_{n=1}^{N} p_n^{y_n}(1-p_n)^{1-y_n}$$
+
+**Passo 3 — passar para o logaritmo.** Produtos de números entre 0 e 1 ficam numericamente instáveis (tendem a zero rapidinho) e são difíceis de derivar. Como $\log$ é uma função crescente, maximizar a verossimilhança é o mesmo que maximizar o **logaritmo** da verossimilhança — e o logaritmo transforma o produto em soma:
+
+$$\log P(\text{dados}\mid\theta) = \sum_{n=1}^{N} \log\Big(p_n^{y_n}(1-p_n)^{1-y_n}\Big) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big]$$
+
+(usando a propriedade $\log(a^k)=k\log a$ e $\log(ab)=\log a + \log b$).
+
+**Passo 4 — o logaritmo da priori.** A densidade de uma gaussiana $\mathcal{N}(0,\lambda^{-1}I)$ é proporcional a $\exp\big(-\frac{\lambda}{2}\Vert \theta\Vert ^2\big)$. Tomando o logaritmo, a parte que depende de $\theta$ é exatamente:
+
+$$\log P(\theta) = -\frac{\lambda}{2}\Vert \theta\Vert ^2 + \text{constante (não depende de }\theta\text{)}$$
+
+**Passo 5 — somar as duas partes.** Como $\log(\text{verossimilhança}\times\text{priori}) = \log(\text{verossimilhança}) + \log(\text{priori})$, a soma dá o log da posteriori **exatamente** — não é mais uma relação de proporcionalidade, é uma **igualdade**, só que com uma constante **somada** (em vez de multiplicada) que não depende de $\theta$:
+
+$$\log P(\theta\mid\text{dados}) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big] - \frac{\lambda}{2}\Vert \theta\Vert ^2 + \text{constante}$$
+
+Maximizar essa expressão em $\theta$ é exatamente a fórmula do início desta seção — o $\hat\theta$ resultante é chamado de estimativa **MAP** (*maximum a posteriori*: o valor de $\theta$ mais provável dado o que já foi observado e o que já se acreditava antes). É essa forma de ajuste — otimizar diretamente um modelo probabilístico bem especificado, em vez de uma métrica substituta como erro quadrático — que garante, sob boas condições, que $\sigma(\hat\theta^Tx(i))$ já saia calibrada como probabilidade (a propriedade usada, sem prova, na Etapa 3).
+
+### Por que isso não tem solução fechada: o problema da conjugação
+
+**O que é "conjugação".** Uma priori é dita **conjugada** com uma verossimilhança quando o produto das duas — a posteriori, antes de normalizar — resulta numa distribuição da **mesma família** da priori. Quando isso acontece, dá para escrever a posteriori inteira em forma fechada, exatamente, não só o ponto de pico dela.
+
+**Se a verossimilhança fosse gaussiana (como numa regressão comum, com ruído contínuo), o ajuste teria solução fechada.** Nesse caso — verossimilhança gaussiana ($y_n\sim\mathcal N(\theta^Tx_n,\sigma^2)$) combinada com priori gaussiana — vale **Gaussiana × Gaussiana = Gaussiana**, a conjugação mais simples que existe. O $\hat\theta$ resultante não seria só "o pico" da posteriori — seria a **média exata** dela, com uma **covariância exata** também disponível em forma fechada, sem nenhuma aproximação.
+
+**O nosso caso (Bernoulli × gaussiana) não é conjugado.** O produto de uma verossimilhança de Bernoulli (via sigmoide) por uma priori gaussiana não resulta em nenhuma distribuição de família conhecida — a posteriori existe (é uma distribuição de probabilidade válida), mas não sabemos escrever sua forma exata. Sabemos só que $P(\theta\mid\text{dados})\propto P(\text{dados}\mid\theta)P(\theta)$, até uma constante — e essa constante em si já é intratável de calcular exatamente. Essa não é uma peculiaridade deste problema específico — é uma propriedade da regressão logística bayesiana em geral, bem documentada na literatura estatística clássica.
+
+**As duas consequências práticas disso, que são problemas distintos:**
+
+1. **Achar o pico já exige um otimizador.** Como $p_n=\sigma(\theta^Tx_n)$ entra no logaritmo de forma não-linear, a derivada de $\log P(\theta\mid\text{dados})$ em relação a $\theta$ não é linear — não dá para isolar $\theta$ com álgebra simples, como aconteceria no caso gaussiano (onde a derivada é linear e vira um sistema resolvido por inversão direta de matriz). É por isso que a maximização precisa de um otimizador iterativo (o gradiente usado é $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$), em vez de uma única inversão de matriz — e por isso não existe forma de atualizar $\hat\theta$ incrementalmente sem reprocessar o histórico completo a cada reajuste. Dado o tamanho do catálogo (10 coberturas opcionais), isso continua sendo computacionalmente trivial — segundos, não minutos — mesmo reprocessando meses de dados.
+
+2. **Mesmo depois de achar o pico, não sabemos o formato exato da incerteza ao redor dele.** Esta é a parte mais sutil, e o motivo pelo qual precisamos da **aproximação de Laplace**: como a posteriori não tem forma fechada, não existe uma "covariância exata" para extrair. A aproximação de Laplace contorna isso **aproximando a posteriori real (intratável) por uma gaussiana**, centrada no pico $\hat\theta$ que acabamos de achar, com covariância igual ao inverso da curvatura (o Hessiano negativo) da log-posteriori naquele ponto — é isso que $H_\theta$ representa. A justificativa: perto do pico, qualquer função suave se parece com uma parábola (expansão de Taylor de segunda ordem), e o exponencial de uma parábola é, por definição, uma gaussiana. **$H_\theta$ não é a covariância exata da posteriori — é a covariância da aproximação gaussiana local a ela**, o que explica por que essa garantia é assintótica (fica mais precisa com mais dados, via o teorema de Bernstein–von Mises), não exata em amostra finita, como veremos a seguir no efeito kappa.
+
+Aqui $\lambda$ aparece como o termo $-\frac{\lambda}{2}\Vert \theta\Vert ^2$: uma penalização que cresce conforme $\theta$ se afasta de zero. Na prática, isso impede que $\hat\theta$ "dispare" para valores extremos quando os dados são escassos ou quando uma cobertura é aceita/rejeitada de forma quase unânime — sem essa penalização, a otimização poderia tentar empurrar $\theta$ ao infinito para explicar perfeitamente um padrão determinístico nos dados.
+
+### O achado importante: o efeito "kappa"
+
+Ao calcular a incerteza (matriz $H_\theta$) via aproximação de Laplace, a fórmula "ingênua" seria:
+
+$$H_\theta = \lambda I + \sum_{n=1}^{N} p_n(1-p_n) x_n x_n^{T}$$
+
+**Analogia do problema:** imagine um jurado que só atualiza o quanto confia num veredito quando o caso é "difícil" (meio a meio). Se o caso é óbvio — todo mundo já sabe a resposta —, ele para de prestar atenção, mesmo vendo o mesmo padrão se confirmar centenas de vezes. É exatamente isso que $p_n(1-p_n)$ faz: esse peso é **máximo** quando $p_n\approx 0{,}5$ (caso "difícil") e **quase zero** quando $p_n$ está perto de 0 ou 1 (caso "óbvio" — ex.: uma cobertura quase sempre mantida).
+
+**Consequência prática, medida em teste real:** simulamos uma cobertura "quase certa" (sempre aceita) e observamos como a incerteza (e o bônus de exploração que ela alimentava, numa versão anterior deste algoritmo) evoluía conforme mais observações se acumulavam:
+
+| Observações acumuladas | Sem correção | Com correção (piso $\nu$) |
+|---|---|---|
+| 1 | 1,02 | 1,02 |
+| 50 | 0,59 | 0,56 |
+| 100 | 0,55 | 0,42 |
+| 300 | **0,50** (estacionou) | **0,25** (continua caindo) |
+
+Sem correção, a incerteza **para de cair por volta de 0,50**, mesmo depois de 300 observações idênticas e consistentes — o modelo nunca "aprende a confiar" totalmente nesse item, mesmo tendo evidência esmagadora. Isso é uma manifestação prática do que a literatura de bandits para modelos logísticos chama de dependência em $\kappa$ (Filippi et al., 2010): as garantias formais desses modelos pioram exatamente quando as probabilidades reais estão perto dos extremos — o oposto do que a intuição sugeriria, e exatamente o problema que o teste de significância da Etapa 5 herdaria sem correção (uma cobertura muito bem avaliada nunca teria sua incerteza pequena o suficiente para o teste ganhar confiança).
+
+### A correção: um piso na curvatura
+
+$$H_\theta = \lambda I + \sum_{n=1}^{N} \max\big(p_n(1-p_n),\ \nu\big) x_n x_n^{T}$$
+
+**Analogia da correção:** é como dizer ao jurado "mesmo em casos óbvios, você ainda precisa prestar um mínimo de atenção a cada novo caso" — garantindo que a confiança sempre cresce com mais dados, nunca estaciona artificialmente.
 
 | Símbolo | Descrição |
 |---|---|
-| $p_n(1-p_n)$ | quanto cada observação de treino contribui para reduzir a incerteza — máximo quando $p_n\approx 0{,}5$, mínimo perto de 0 ou 1 |
-| $\nu$ | um piso mínimo para esse peso — sem ele, itens com histórico consistentemente extremo (quase sempre aceitos ou quase sempre rejeitados) parariam de reduzir sua própria incerteza, mesmo com muitos dados confirmando o mesmo padrão repetidamente. É o piso que garante a variância continuar encolhendo conforme mais dados chegam, inclusive nessas regiões |
+| $p_n(1-p_n)$ | quanto aquela observação específica reduz a incerteza — máximo em casos "difíceis" (perto de 50/50), quase zero em casos "óbvios" |
+| $\nu$ | piso mínimo — garante que mesmo observações de casos óbvios continuem contribuindo |
+| $H_\theta$ (corrigido) | nova "memória", agora sem o platô artificial, alimentando o teste de significância da próxima rodada (Etapa 5) |
+
+**Por que essa correção foi escolhida em vez de uma alternativa por contagem bruta:** o sistema é contextual — o mesmo item aparece em contextos diferentes (perfis de cliente diferentes). Uma correção baseada em "contar quantas vezes vi esse item" jogaria fora a generalização entre contextos parecidos, que é o motivo de $\theta$ ser compartilhado entre as 10 coberturas desde o início. O piso de curvatura, em vez disso, corrige o mecanismo exato onde o problema nasce (o peso da observação dentro de $H_\theta$), sem sair da geometria contextual do modelo.
 
 **A matemática — reajuste do baseline:** recalcula-se $\text{baseline}_i$, $n_i$, $\text{logit}(\text{baseline}_i)$ e sua variância (Etapa 4) usando toda a fatia reservada acumulada até o momento, do mesmo jeito.
 
