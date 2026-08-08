@@ -202,30 +202,28 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 ## 8. Traduzindo a edição em dado de treino
 
-**Analogia:** cada cobertura mantida, tirada ou acrescentada vira uma "ficha" no arquivo — inclusive as obrigatórias, porque "obrigatória" aqui significa que a lei exige que ela seja **ofertada**, não que o cliente seja impedido de recusá-la. Existe decisão real do cliente para aprender, mesmo nessas 4.
+**Analogia:** cada cobertura opcional mantida, tirada ou acrescentada vira uma "ficha" no arquivo — as 4 obrigatórias nunca geram ficha nenhuma, porque não há decisão do cliente ali: obrigatória é sempre aceita, sem exceção, sem nenhuma variação para o modelo aprender.
 
-**A matemática:** para **todas** as 14 coberturas visíveis ao cliente (ofertada ou não — como o catálogo é pequeno e totalmente exposto, não há ambiguidade sobre o que o cliente "viu"):
+**A matemática:** para cada uma das 10 coberturas opcionais visíveis ao cliente (ofertada ou não — como o catálogo é pequeno e totalmente exposto, não há ambiguidade sobre o que o cliente "viu"):
 
 | $y_i$ | Condição |
 |---|---|
 | 1 | se $i \in S_{final}$ |
 | 0 | caso contrário |
 
-**Por que as 4 obrigatórias entram no treino de $\theta$, mesmo nunca precisando do teste de significância.** Como $\theta$ é compartilhado entre todas as 14 coberturas, os dados de aceitação/recusa das obrigatórias ainda ensinam algo útil sobre como perfil de cliente e atributos de cobertura se relacionam — informação que se generaliza para as 10 opcionais, mesmo sem $\eta(i)$ nunca ser usado para decidir se uma obrigatória entra no pacote (ela sempre entra, por exigência legal, independente do que o modelo estimar). Excluir esses dados do treino jogaria fora informação de generalização sem necessidade — a única coisa que as obrigatórias **não** fazem é passar pelo teste da Etapa 5.
+**Por que as 4 obrigatórias nunca entram nesse cálculo.** Como uma cobertura obrigatória é sempre mantida — $y_i=1$ em toda observação, sem exceção —, não existe nenhuma variação ali para $\theta$ aprender: uma variável que nunca muda não ensina nada sobre a relação entre perfil de cliente e atributos de cobertura, só adiciona ruído à estimativa e um risco desnecessário de quase-separação numérica (o mesmo cenário extremo que motiva a regularização $\lambda$). As obrigatórias ficam inteiramente fora dos dados de treino — elas entram no pacote final só pela Etapa 5, nunca pelo aprendizado de $\theta$.
 
 **O exemplo rodando:**
 
-| Cobertura | Ofertada? | No final? | $y_i$ |
+| Cobertura opcional | Ofertada? | No final? | $y_i$ |
 |---|---|---|---|
-| Incêndio (obrigatória) | sim | sim | **1** |
-| Responsabilidade Civil (obrigatória) | sim | não | **0** — cliente recusou, mesmo sendo ofertada por exigência legal |
-| Desastres Naturais (opcional) | sim | sim | **1** |
-| Roubo e Furto (opcional) | sim | sim | **1** |
-| Conteúdo Residencial (opcional) | sim | não | **0** |
-| Danos Elétricos (opcional) | não | sim (espontânea) | **1** |
+| Desastres Naturais | sim | sim | **1** |
+| Roubo e Furto | sim | sim | **1** |
+| Conteúdo Residencial | sim | não | **0** |
+| Danos Elétricos | não | sim (espontânea) | **1** |
 | (demais opcionais não ofertadas nem adicionadas) | não | não | **0** |
 
-**O que entra / o que sai:** entra: $S_{ofertado}, S_{final}$. Sai: as observações $(x_i, y_i)$ de todas as 14 coberturas, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — lembrando que só as 10 opcionais passam pelo teste da Etapa 5, já que as obrigatórias nunca entram nessa comparação.
+**O que entra / o que sai:** entra: $S_{ofertado}, S_{final}$. Sai: as observações $(x_i, y_i)$ de cada uma das 10 coberturas opcionais, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — as obrigatórias nunca geram observação nenhuma.
 
 ---
 
@@ -303,7 +301,7 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} p_n(1-p_n) x_n x_n^{T}$$
 
 **Analogia do problema:** imagine um jurado que só atualiza o quanto confia num veredito quando o caso é "difícil" (meio a meio). Se o caso é óbvio — todo mundo já sabe a resposta —, ele para de prestar atenção, mesmo vendo o mesmo padrão se confirmar centenas de vezes. É exatamente isso que $p_n(1-p_n)$ faz: esse peso é **máximo** quando $p_n\approx 0{,}5$ (caso "difícil") e **quase zero** quando $p_n$ está perto de 0 ou 1 (caso "óbvio" — ex.: uma cobertura quase sempre mantida).
 
-**Por que isso não é um defeito da nossa implementação — é uma propriedade real da regressão logística.** À primeira vista, parece um paradoxo: por que a incerteza ficaria alta justamente para as coberturas mais bem confirmadas? A resposta exige separar duas perguntas que parecem a mesma coisa, mas não são: *"estou confiante sobre o que vai acontecer?"* (a probabilidade $p(i)$) e *"estou confiante sobre o valor exato de $\eta(i)$, o log-odds que gera essa probabilidade?"* — essa segunda pergunta é o que $\text{Var}[\eta(i)]$ mede, e a resposta genuína pode ser "não", mesmo quando a primeira resposta é um "sim" categórico.
+**Por que isso não é um defeito da nossa implementação — é uma propriedade real da regressão logística.** À primeira vista, parece um paradoxo: por que a incerteza ficaria alta justamente para as coberturas mais bem confirmadas? A resposta exige separar duas perguntas que parecem a mesma coisa, mas não são: "estou confiante sobre o que vai acontecer?" (a probabilidade $p(i)$) e "estou confiante sobre o valor exato de $\eta(i)$, o log-odds que gera essa probabilidade?" — essa segunda pergunta é o que $\text{Var}[\eta(i)]$ mede, e a resposta genuína pode ser "não", mesmo quando a primeira resposta é um "sim" categórico.
 
 Isso acontece porque o funil $\sigma(\cdot)$ **satura** nos extremos: duas hipóteses bem diferentes de $\eta(i)$ — digamos, $\eta=4$ (equivale a $p\approx 0{,}982$) e $\eta=7$ (equivale a $p\approx 0{,}999$) — produzem, na prática, o mesmo comportamento observável: quase sempre "aceitou". Centenas de observações confirmam que $\eta(i)$ está "em algum lugar bem alto", mas não conseguem discriminar **exatamente quão alto**, porque uma faixa larga de valores de $\eta$ diferentes comprime para quase a mesma probabilidade. É isso que $p_n(1-p_n)$ mede de verdade: não "quão certo o resultado parece", mas "quanto essa observação ajuda a **localizar precisamente** $\eta$ no espaço log-odds" — e, perto dos extremos, ela ajuda genuinamente pouco. Se você removesse toda a engenharia deste documento e usasse a aproximação de Laplace exatamente como a teoria estatística clássica define, esse comportamento apareceria do mesmo jeito — não é uma falha de implementação, é assim que a matemática funciona.
 
@@ -358,7 +356,7 @@ O catálogo não é fixo para sempre — coberturas novas podem surgir, e uma co
 
 **Por que uma cobertura nova pode ser pontuada imediatamente, sem redimensionar nada.** $\theta$ tem dimensão fixa, definida pelo espaço de atributos semânticos de $f_i$ (Etapa 3) — não pelo número de coberturas do catálogo. Como $f_i$ não inclui nenhum identificador one-hot por item, adicionar uma cobertura não muda a dimensão de $x(i)$ nem exige retreinar $\theta$ do zero: basta a equipe atuarial definir o vetor $f_i$ da cobertura nova, nas mesmas dimensões já usadas para as demais, e $\theta$ já consegue estimar $\eta(i)$ para ela — generalizando a partir de coberturas com atributos parecidos, mesmo sem nenhuma observação histórica específica.
 
-**O que ainda precisa de um período de aquecimento: o baseline.** $\theta$ generaliza de cara, mas $b_i$ (Etapa 4) começa em $n_i=0$ — sem observações reservadas, $\text{Var}[\text{logit}(b_i)]$ não é calculável. Uma cobertura nova (ou uma que acabou de deixar de ser obrigatória — que nunca foi exposta à rota aleatória, mesmo já tendo histórico de $y_i$ alimentando $\theta$) precisa ficar temporariamente de fora do teste de significância da Etapa 5, sendo testada só pela rota aleatória, até $n_i$ acumular o suficiente para o teste fazer sentido estatístico. É o mesmo mecanismo que já protege o catálogo como um todo — o motivo de $\epsilon$ nunca poder ser zero — só que aplicado à entrada de um item novo.
+**O que ainda precisa de um período de aquecimento: o baseline.** $\theta$ generaliza de cara, mas $b_i$ (Etapa 4) começa em $n_i=0$ — sem observações reservadas, $\text{Var}[\text{logit}(b_i)]$ não é calculável. Uma cobertura nova (ou uma que acabou de deixar de ser obrigatória — que nunca gerou nenhuma observação de treino, já que obrigatórias ficam inteiramente fora dos dados que alimentam $\theta$, Etapa 8) precisa ficar temporariamente de fora do teste de significância da Etapa 5, sendo testada só pela rota aleatória, até acumular dado suficiente — tanto para $\theta$ aprender algo sobre ela quanto para $n_i$ crescer o bastante para o teste fazer sentido estatístico. Nesse caso específico (obrigatória virando opcional), o "aquecimento" é ainda mais completo que o de uma cobertura genuinamente nova: não existe absolutamente nenhum histórico prévio, nem do lado de $\theta$ nem do lado do baseline. É o mesmo mecanismo que já protege o catálogo como um todo — o motivo de $\epsilon$ nunca poder ser zero — só que aplicado à entrada de um item novo.
 
 **O caminho inverso (opcional → obrigatória) é mais simples:** a cobertura só sai do teste de significância e entra direto no conjunto sempre incluído (Etapa 5) — sem precisar de nenhum período de espera.
 
@@ -404,7 +402,7 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 | Piso de curvatura $\nu$ em $H_\theta$ | evita que itens com histórico consistentemente extremo parem de reduzir sua própria incerteza — mantém a variância encolhendo com mais dados, mesmo em regiões de alta certeza |
 | Teste de significância ($D(i)$ vs. incerteza combinada) | decide se a diferença entre modelo e referência é grande o suficiente para confiar nela, sem exigir peso de negócio arbitrário e sem depender só de uma comparação pontual |
 | Reserva $\rho$ para o baseline | garante que a comparação entre $\eta(i)$ e o baseline seja entre duas estimativas estatisticamente independentes |
-| Obrigatórias incluídas no treino, fora do teste | aproveita a variação real de aceitação/recusa das obrigatórias para melhorar a generalização de $\theta$, sem nunca usar o teste para decidir se elas entram no pacote |
+| Obrigatórias excluídas do treino | evita ruído e risco de quase-separação numérica em uma variável que nunca tem variação para aprender ($y_i=1$ sempre) — elas entram no pacote só pela Etapa 5, nunca pelo aprendizado de $\theta$ |
 | Reajuste em lote completo | necessário porque a regressão logística não tem solução fechada — não é um detalhe de implementação, é uma propriedade do modelo |
 
 ---
