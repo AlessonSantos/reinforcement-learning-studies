@@ -113,6 +113,8 @@ $$b_i = \frac{\text{aceitações de } i \text{ nas rodadas reservadas}}{n_i}$$
 
 calculada **só** sobre uma fração $\rho$ das rodadas aleatórias ($Z_t=1$), reservada exclusivamente para este cálculo — nunca usada para treinar $\theta$ (Etapa 9), e nunca misturada com rodadas da rota do modelo.
 
+**Uma condição adicional, além da rodada ser reservada: a cobertura precisa ter sido genuinamente sorteada para aquela oferta.** $n_i$ e o numerador de aceitações de $b_i$ só contam observações em que a cobertura $i$ foi de fato incluída no sorteio independente da Etapa 2 — nunca uma adição espontânea do cliente (Etapa 7), mesmo que ela tenha acontecido numa rodada reservada. O motivo é o mesmo que já vale para o treino de $\theta$ com pares, só aplicado ao item isolado: $b_i$ precisa representar "a taxa de aceitação sob exposição exógena, sem nenhuma seleção" — uma adição espontânea é o oposto disso, é uma escolha do cliente, não um sorteio. Contá-la infla $b_i$ artificialmente, contaminando exatamente a referência que deveria ser neutra. Essa restrição vale só para $b_i$; a mesma adição espontânea continua alimentando o treino de $\theta$ normalmente (Etapa 8), porque ali o viés de auto-seleção é tolerável.
+
 $$\text{logit}(b_i) = \log\left(\frac{b_i}{1-b_i}\right), \qquad \text{Var}\big[\text{logit}(b_i)\big] \approx \frac{1}{n_i b_i(1-b_i)}$$
 
 | Símbolo | Descrição |
@@ -164,7 +166,7 @@ $$\text{Var}[D] = 0{,}05 + 0{,}0347 = 0{,}0847, \qquad \sqrt{\text{Var}[D]} \app
 
 $$D - z\sqrt{\text{Var}[D]} = 1{,}305 - 1{,}645\times 0{,}291 \approx 0{,}826 > 0 \quad\Rightarrow\quad \textbf{oferta}$$
 
-Para Danos Elétricos, suponha $\eta=0{,}201, \text{Var}[\eta]=0{,}09$ (uma cobertura ainda menos testada), e $b=0{,}50$ com $n=80$ (logo $\text{logit}(b)=0, \text{Var}[\text{logit}(b)]=0{,}05$):
+Para Danos Elétricos, suponha $\eta=0{,}201, \text{Var}[\eta]=0{,}09$ (uma cobertura ainda menos testada), e $b=0{,}50$ com $n=80$ — logo $\text{logit}(b)=0, \text{Var}[\text{logit}(b)]=0{,}05$:
 
 $$D(\text{Danos Elétricos}) = 0{,}201 - 0 = 0{,}201, \qquad \text{Var}[D] = 0{,}09+0{,}05=0{,}14$$
 
@@ -223,7 +225,7 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 | Danos Elétricos | não | sim (espontânea) | **1** |
 | (demais opcionais não ofertadas nem adicionadas) | não | não | **0** |
 
-**O que entra / o que sai:** entra: $S_{ofertado}, S_{final}$. Sai: as observações $(x_i, y_i)$ de cada uma das 10 coberturas opcionais, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — as obrigatórias nunca geram observação nenhuma.
+**O que entra / o que sai:** entra: $S_{ofertado}, S_{final}$. Sai: as observações $(x_i, y_i)$ de cada uma das 10 coberturas opcionais, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — as obrigatórias nunca geram observação nenhuma. Lembrete: mesmo numa rodada reservada, uma cobertura adicionada espontaneamente (fora de $S_{ofertado}$) alimenta $\theta$ normalmente, mas nunca entra no cálculo de $b_i$ (Etapa 4) — só contam ali as coberturas genuinamente sorteadas para a oferta.
 
 ---
 
@@ -265,7 +267,7 @@ $$P(\text{dados}\mid\theta) = \prod_{n=1}^{N} p_n^{y_n}(1-p_n)^{1-y_n}$$
 
 $$\log P(\text{dados}\mid\theta) = \sum_{n=1}^{N} \log\Big(p_n^{y_n}(1-p_n)^{1-y_n}\Big) = \sum_{n=1}^{N}\Big[y_n\log p_n + (1-y_n)\log(1-p_n)\Big]$$
 
-(usando a propriedade $\log(a^k)=k\log a$ e $\log(ab)=\log a + \log b$).
+usando a propriedade $\log(a^k)=k\log a$ e $\log(ab)=\log a + \log b$.
 
 **Passo 4 — o logaritmo da priori.** A densidade de uma gaussiana $\mathcal{N}(0,\lambda^{-1}I)$ é proporcional a $\exp\big(-\frac{\lambda}{2}\Vert \theta\Vert ^2\big)$. Tomando o logaritmo, a parte que depende de $\theta$ é exatamente:
 
@@ -287,7 +289,7 @@ Maximizar essa expressão em $\theta$ é exatamente a fórmula do início desta 
 
 **As duas consequências práticas disso, que são problemas distintos:**
 
-1. **Achar o pico já exige um otimizador.** Como $p_n=\sigma(\theta^Tx_n)$ entra no logaritmo de forma não-linear, a derivada de $\log P(\theta\mid\text{dados})$ em relação a $\theta$ não é linear — não dá para isolar $\theta$ com álgebra simples, como aconteceria no caso gaussiano (onde a derivada é linear e vira um sistema resolvido por inversão direta de matriz). É por isso que a maximização precisa de um otimizador iterativo (o gradiente usado é $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$), em vez de uma única inversão de matriz — e por isso não existe forma de atualizar $\hat\theta$ incrementalmente sem reprocessar o histórico completo a cada reajuste. Dado o tamanho do catálogo (10 coberturas opcionais), isso continua sendo computacionalmente trivial — segundos, não minutos — mesmo reprocessando meses de dados.
+1. **Achar o pico já exige um otimizador.** Como $p_n=\sigma(\theta^Tx_n)$ entra no logaritmo de forma não-linear, a derivada de $\log P(\theta\mid\text{dados})$ em relação a $\theta$ não é linear — não dá para isolar $\theta$ com álgebra simples, como aconteceria no caso gaussiano (onde a derivada é linear e vira um sistema resolvido por inversão direta de matriz). É por isso que a maximização precisa de um otimizador iterativo — o gradiente usado é $\nabla_\theta = \sum_n x_n(y_n-p_n) - \lambda\theta$ —, em vez de uma única inversão de matriz — e por isso não existe forma de atualizar $\hat\theta$ incrementalmente sem reprocessar o histórico completo a cada reajuste. Dado o tamanho do catálogo (10 coberturas opcionais), isso continua sendo computacionalmente trivial — segundos, não minutos — mesmo reprocessando meses de dados.
 
 2. **Mesmo depois de achar o pico, não sabemos o formato exato da incerteza ao redor dele.** Esta é a parte mais sutil, e o motivo pelo qual precisamos da **aproximação de Laplace**: como a posteriori não tem forma fechada, não existe uma "covariância exata" para extrair. A aproximação de Laplace contorna isso **aproximando a posteriori real (intratável) por uma gaussiana**, centrada no pico $\hat\theta$ que acabamos de achar, com covariância igual ao inverso da curvatura (o Hessiano negativo) da log-posteriori naquele ponto — é isso que $H_\theta$ representa. A justificativa: perto do pico, qualquer função suave se parece com uma parábola (expansão de Taylor de segunda ordem), e o exponencial de uma parábola é, por definição, uma gaussiana. **$H_\theta$ não é a covariância exata da posteriori — é a covariância da aproximação gaussiana local a ela**, o que explica por que essa garantia é assintótica (fica mais precisa com mais dados, via o teorema de Bernstein–von Mises), não exata em amostra finita, como veremos a seguir no efeito kappa.
 
@@ -301,7 +303,7 @@ $$H_\theta = \lambda I + \sum_{n=1}^{N} p_n(1-p_n) x_n x_n^{T}$$
 
 **Analogia do problema:** imagine um jurado que só atualiza o quanto confia num veredito quando o caso é "difícil" (meio a meio). Se o caso é óbvio — todo mundo já sabe a resposta —, ele para de prestar atenção, mesmo vendo o mesmo padrão se confirmar centenas de vezes. É exatamente isso que $p_n(1-p_n)$ faz: esse peso é **máximo** quando $p_n\approx 0{,}5$ (caso "difícil") e **quase zero** quando $p_n$ está perto de 0 ou 1 (caso "óbvio" — ex.: uma cobertura quase sempre mantida).
 
-**Por que isso não é um defeito da nossa implementação — é uma propriedade real da regressão logística.** À primeira vista, parece um paradoxo: por que a incerteza ficaria alta justamente para as coberturas mais bem confirmadas? A resposta exige separar duas perguntas que parecem a mesma coisa, mas não são: "estou confiante sobre o que vai acontecer?" (a probabilidade $p(i)$) e "estou confiante sobre o valor exato de $\eta(i)$, o log-odds que gera essa probabilidade?" — essa segunda pergunta é o que $\text{Var}[\eta(i)]$ mede, e a resposta genuína pode ser "não", mesmo quando a primeira resposta é um "sim" categórico.
+**Por que isso não é um defeito da nossa implementação — é uma propriedade real da regressão logística.** À primeira vista, parece um paradoxo: por que a incerteza ficaria alta justamente para as coberturas mais bem confirmadas? A resposta exige separar duas perguntas que parecem a mesma coisa, mas não são: "estou confiante sobre o que vai acontecer?" — a probabilidade $p(i)$ — e "estou confiante sobre o valor exato de $\eta(i)$, o log-odds que gera essa probabilidade?" — essa segunda pergunta é o que $\text{Var}[\eta(i)]$ mede, e a resposta genuína pode ser "não", mesmo quando a primeira resposta é um "sim" categórico.
 
 Isso acontece porque o funil $\sigma(\cdot)$ **satura** nos extremos: duas hipóteses bem diferentes de $\eta(i)$ — digamos, $\eta=4$ (equivale a $p\approx 0{,}982$) e $\eta=7$ (equivale a $p\approx 0{,}999$) — produzem, na prática, o mesmo comportamento observável: quase sempre "aceitou". Centenas de observações confirmam que $\eta(i)$ está "em algum lugar bem alto", mas não conseguem discriminar **exatamente quão alto**, porque uma faixa larga de valores de $\eta$ diferentes comprime para quase a mesma probabilidade. É isso que $p_n(1-p_n)$ mede de verdade: não "quão certo o resultado parece", mas "quanto essa observação ajuda a **localizar precisamente** $\eta$ no espaço log-odds" — e, perto dos extremos, ela ajuda genuinamente pouco. Se você removesse toda a engenharia deste documento e usasse a aproximação de Laplace exatamente como a teoria estatística clássica define, esse comportamento apareceria do mesmo jeito — não é uma falha de implementação, é assim que a matemática funciona.
 
@@ -400,7 +402,7 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 | $\theta$ compartilhado entre as 10 opcionais | permite generalizar entre coberturas parecidas, em vez de aprender cada uma isoladamente do zero |
 | $Z_t\sim\text{Bernoulli}(\epsilon)$ | única fonte de aleatoriedade deliberada — garante que toda cobertura continue sendo testada, mesmo as já bem avaliadas |
 | Piso de curvatura $\nu$ em $H_\theta$ | evita que itens com histórico consistentemente extremo parem de reduzir sua própria incerteza — mantém a variância encolhendo com mais dados, mesmo em regiões de alta certeza |
-| Teste de significância ($D(i)$ vs. incerteza combinada) | decide se a diferença entre modelo e referência é grande o suficiente para confiar nela, sem exigir peso de negócio arbitrário e sem depender só de uma comparação pontual |
+| Teste de significância — $D(i)$ vs. incerteza combinada | decide se a diferença entre modelo e referência é grande o suficiente para confiar nela, sem exigir peso de negócio arbitrário e sem depender só de uma comparação pontual |
 | Reserva $\rho$ para o baseline | garante que a comparação entre $\eta(i)$ e o baseline seja entre duas estimativas estatisticamente independentes |
 | Obrigatórias excluídas do treino | evita ruído e risco de quase-separação numérica em uma variável que nunca tem variação para aprender ($y_i=1$ sempre) — elas entram no pacote só pela Etapa 5, nunca pelo aprendizado de $\theta$ |
 | Reajuste em lote completo | necessário porque a regressão logística não tem solução fechada — não é um detalhe de implementação, é uma propriedade do modelo |
