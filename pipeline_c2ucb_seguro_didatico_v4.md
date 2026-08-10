@@ -66,9 +66,9 @@ O índice $t$ indica o número da rodada.
 
 **Por que a rota aleatória precisa cobrir bem as 10 coberturas ao longo do tempo, mesmo sorteando o subconjunto inteiro de uma vez:** nesta versão, cada cobertura opcional é decidida individualmente na Etapa 5, sem nenhum termo que dependa de quantas outras já foram incluídas — então, ao longo de muitas rodadas, a rota aleatória precisa garantir que cada cobertura, isoladamente, apareça (e deixe de aparecer) um número suficiente de vezes, para que a Etapa 4 consiga estimar sua taxa de aceitação de referência com confiança.
 
-**O exemplo rodando:** suponha que já passamos da fase de exploração intensa — vamos seguir o Cliente A pela via do modelo (Etapa 3 em diante).
+**O exemplo rodando:** suponha que o sorteio desta rodada resultou em $Z_t=1$ — o pacote é montado direto pela rota aleatória (pule para a Etapa 6, e volte para a Etapa 3 depois para acompanhar a rota do modelo). Se tivesse dado $Z_t=0$, seguiríamos direto para a Etapa 3.
 
-**O que entra / o que sai:** entra: $c, \epsilon$ (o valor fixo definido pela equipe). Sai: $Z_t$ sorteado, e a partir dele, sinal para calcular scores (Etapa 3) ou pacote aleatório.
+**O que entra / o que sai:** entra: $c, \epsilon$ (o valor fixo definido pela equipe). Sai: $Z_t$ sorteado, e a partir dele, sinal para calcular scores (Etapa 3) ou pacote aleatório (Etapa 6).
 
 ---
 
