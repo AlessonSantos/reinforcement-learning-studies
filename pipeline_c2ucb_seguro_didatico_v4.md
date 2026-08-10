@@ -217,6 +217,8 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 **Por que as 4 obrigatórias nunca entram nesse cálculo.** Como uma cobertura obrigatória é sempre mantida — $y_i=1$ em toda observação, sem exceção —, não existe nenhuma variação ali para $\theta$ aprender: uma variável que nunca muda não ensina nada sobre a relação entre perfil de cliente e atributos de cobertura, só adiciona ruído à estimativa e um risco desnecessário de quase-separação numérica (o mesmo cenário extremo que motiva a regularização $\lambda$). As obrigatórias ficam inteiramente fora dos dados de treino — elas entram no pacote final só pela Etapa 5, nunca pelo aprendizado de $\theta$.
 
+**Como a origem de cada observação é marcada, usando $\rho$.** Toda rodada da rota aleatória ($Z_t=1$) é classificada em uma de duas categorias: uma fração $\rho$ delas, definida pela equipe, é marcada como "reservada para o baseline" (Etapa 4); o restante ($1-\rho$) como "rodada aleatória de treino", alimentando $\theta$ normalmente.
+
 **O exemplo rodando:**
 
 | Cobertura opcional | Ofertada? | No final? | $y_i$ |
