@@ -25,7 +25,7 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 | $\lambda$ | regularização — o quanto $\theta$ começa "travada" perto de zero antes de haver evidência forte, e o quanto continua puxada para zero mesmo depois, protegendo contra estimativas extremas |
 | $H_\theta$ | matriz de incerteza sobre $\theta$ — "quanto já se aprendeu, e em quais direções", usada para medir a confiança de cada estimativa (Etapa 3) |
 | $\nu$ | piso mínimo de curvatura usado ao atualizar $H_\theta$ (Etapa 9) — evita que coberturas com propensão muito próxima de 0 ou 1 parem de reduzir sua própria incerteza |
-| $\epsilon$ | probabilidade de explorar aleatoriamente, em qualquer rodada — um valor **fixo**, definido pela equipe (ver Etapa 2) |
+| $\epsilon$ | probabilidade de a rodada inteira ir pela rota aleatória — um valor **fixo**, definido pela equipe (ver Etapa 2) |
 | $\rho$ | fração das rodadas aleatórias reservada exclusivamente para calcular a taxa de referência de cada cobertura (ver Etapa 4) — nunca usada para treinar $\theta$ |
 
 **O que entra / o que sai:** nada entra. Sai: $\theta, H_\theta$ zerados, e os parâmetros de configuração — $\lambda, \nu, \epsilon, \rho$ — definidos, prontos para a Rodada 1.
@@ -52,17 +52,19 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 
 $$Z_t \sim \text{Bernoulli}(\epsilon)$$
 
+O índice $t$ indica o número da rodada.
+
 | Se... | Então... |
 |---|---|
-| $Z_t=1$ (prob. $\epsilon$) | rota aleatória: cada uma das 10 coberturas opcionais entra no pacote de forma independente, com probabilidade fixa (ex.: 50%) — pula para a Etapa 6 |
+| $Z_t=1$ (prob. $\epsilon$) | rota aleatória: sorteia-se um subconjunto entre as 10 coberturas opcionais — não cobertura por cobertura, o subconjunto inteiro é sorteado de uma vez — pula para a Etapa 6 |
 | $Z_t=0$ (prob. $1-\epsilon$) | rota do modelo: segue para a Etapa 3 |
 
 | Símbolo | Descrição |
 |---|---|
 | $Z_t$ | a única variável genuinamente aleatória que decide o caminho — sorteada de novo a cada rodada, nunca fixada por cliente |
-| $\epsilon$ | um valor **fixo**, definido pela equipe — não decai automaticamente com o tempo. Precisa continuar **maior que zero** para sempre, para garantir que toda cobertura, mesmo uma já bem avaliada pelo modelo, continue sendo testada de vez em quando |
+| $\epsilon$ | a probabilidade de a rodada inteira ir pela rota aleatória — um valor **fixo**, definido pela equipe, que não decai automaticamente com o tempo. Precisa continuar **maior que zero** para sempre |
 
-**Por que a rota aleatória oferece cada cobertura de forma independente, sem se preocupar com o tamanho do pacote:** nesta versão, cada cobertura opcional é decidida individualmente, sem nenhum termo que dependa de quantas outras já foram incluídas — então a rota aleatória só precisa garantir que cada cobertura, isoladamente, seja testada com e sem a presença do cliente estar "exposto" a ela, em proporção suficiente para estimar sua taxa de aceitação de referência (Etapa 4).
+**Por que a rota aleatória precisa cobrir bem as 10 coberturas ao longo do tempo, mesmo sorteando o subconjunto inteiro de uma vez:** nesta versão, cada cobertura opcional é decidida individualmente na Etapa 5, sem nenhum termo que dependa de quantas outras já foram incluídas — então, ao longo de muitas rodadas, a rota aleatória precisa garantir que cada cobertura, isoladamente, apareça (e deixe de aparecer) um número suficiente de vezes, para que a Etapa 4 consiga estimar sua taxa de aceitação de referência com confiança.
 
 **O exemplo rodando:** suponha que já passamos da fase de exploração intensa — vamos seguir o Cliente A pela via do modelo (Etapa 3 em diante).
 
