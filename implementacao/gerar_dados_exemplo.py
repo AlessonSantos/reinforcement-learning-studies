@@ -79,7 +79,10 @@ def gerar_historico(df_catalogo, n_clientes=800, epsilon=0.1, fracao_reservada_b
     pd.DataFrame
         Uma linha por observação (cliente x cobertura opcional), com as colunas:
         cliente_id, idade_norm, renda_norm, cobertura_id, y, origem,
-        ofertada_aleatoriamente.
+        ofertada_aleatoriamente. Essa última só tem significado nas linhas de
+        origem "aleatoria_*" (True = sorteada para a oferta; False = adição
+        espontânea dentro de uma rodada aleatória); nas linhas de origem
+        "modelo", vem como None, porque a pergunta não se aplica a elas.
     """
     rng = np.random.default_rng(seed)
     coberturas_opcionais = df_catalogo.loc[~df_catalogo["obrigatoria"], "cobertura_id"].tolist()
@@ -131,7 +134,7 @@ def gerar_historico(df_catalogo, n_clientes=800, epsilon=0.1, fracao_reservada_b
                 "cobertura_id": cobertura_id,
                 "y": y,
                 "origem": origem,
-                "ofertada_aleatoriamente": foi_ofertada if vai_aleatorio else False,
+                "ofertada_aleatoriamente": foi_ofertada if vai_aleatorio else None,
             })
 
     return pd.DataFrame(linhas)

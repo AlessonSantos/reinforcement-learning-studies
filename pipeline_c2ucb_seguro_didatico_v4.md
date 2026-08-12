@@ -212,12 +212,16 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 
 **Analogia:** cada cobertura opcional mantida, tirada ou acrescentada vira uma "ficha" no arquivo — as 4 obrigatórias nunca geram ficha nenhuma, porque não há decisão do cliente ali: obrigatória é sempre aceita, sem exceção, sem nenhuma variação para o modelo aprender.
 
-**A matemática:** para cada uma das 10 coberturas opcionais visíveis ao cliente (ofertada ou não — como o catálogo é pequeno e totalmente exposto, não há ambiguidade sobre o que o cliente "viu"):
+**A matemática:** cada cobertura opcional gera uma observação de treino sempre que o cliente teve oportunidade real de manifestar uma decisão sobre ela — quando foi ofertada (Etapa 6), independente do resultado, ou quando foi adicionada espontaneamente, mesmo sem ter sido ofertada:
 
-| $y_i$ | Condição |
-|---|---|
-| 1 | se $i \in S_{final}$ |
-| 0 | caso contrário |
+| Situação | $y_i$ | Gera observação? |
+|---|---|---|
+| Ofertada e mantida | 1 | sim |
+| Ofertada e removida | 0 | sim |
+| Não ofertada, adicionada espontaneamente | 1 | sim |
+| Não ofertada, não adicionada | — | não |
+
+**Por que uma cobertura não ofertada e não adicionada não gera observação nenhuma.** A adição espontânea permite aferir propensão com razoável confiança: o cliente precisou ativamente abrir a edição do plano e incluir aquela cobertura por conta própria, um sinal direto de interesse. Já a ausência de adição, para uma cobertura que não foi ofertada, é ambígua por natureza — pode significar que o cliente não tinha propensão para ela, mas pode significar, com igual plausibilidade, que ele simplesmente nunca abriu a tela de edição, ou nunca reparou naquela opção específica dentro dela. Não existe, a partir do dado disponível, nenhuma forma de distinguir as duas situações. Tratar essa ausência como um "não" definitivo introduziria um viés sistemático, atribuindo rejeição genuína a uma parcela de clientes que, na realidade, nunca chegaram a considerar aquela cobertura.
 
 **Por que as 4 obrigatórias nunca entram nesse cálculo.** Como uma cobertura obrigatória é sempre mantida — $y_i=1$ em toda observação, sem exceção —, não existe nenhuma variação ali para $\theta$ aprender: uma variável que nunca muda não ensina nada sobre a relação entre perfil de cliente e atributos de cobertura, só adiciona ruído à estimativa e um risco desnecessário de quase-separação numérica (o mesmo cenário extremo que motiva a regularização $\lambda$). As obrigatórias ficam inteiramente fora dos dados de treino — elas entram no pacote final só pela Etapa 5, nunca pelo aprendizado de $\theta$.
 
@@ -231,9 +235,9 @@ O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ f
 | Roubo e Furto | sim | sim | **1** |
 | Conteúdo Residencial | sim | não | **0** |
 | Danos Elétricos | não | sim (espontânea) | **1** |
-| (demais opcionais não ofertadas nem adicionadas) | não | não | **0** |
+| (demais opcionais não ofertadas nem adicionadas) | não | não | sem observação |
 
-**O que entra / o que sai:** entra: $S_{ofertado}, S_{final}$. Sai: as observações $(x_i, y_i)$ de cada uma das 10 coberturas opcionais, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — as obrigatórias nunca geram observação nenhuma. Lembrete: mesmo numa rodada reservada, uma cobertura adicionada espontaneamente (fora de $S_{ofertado}$) alimenta $\theta$ normalmente, mas nunca entra no cálculo de $b_i$ (Etapa 4) — só contam ali as coberturas genuinamente sorteadas para a oferta.
+**O que entra / o que sai:** entra: $S_{ofertado}, S_{final}$. Sai: as observações $(x_i, y_i)$ das coberturas opcionais que foram ofertadas ou adicionadas, marcadas quanto à origem (rota aleatória reservada para baseline, rota aleatória de treino, ou rota do modelo), para a Etapa 9 saber onde alocar cada uma — as obrigatórias nunca geram observação nenhuma. Lembrete: mesmo numa rodada reservada, uma cobertura adicionada espontaneamente (fora de $S_{ofertado}$) alimenta $\theta$ normalmente, mas nunca entra no cálculo de $b_i$ (Etapa 4) — só contam ali as coberturas genuinamente sorteadas para a oferta.
 
 ---
 
