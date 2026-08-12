@@ -1,0 +1,15 @@
+cobertura_id,obrigatoria,categoria_risco,faixa_premio,freq_sinistro_norm
+Incendio,True,estrutural,caro,0.7296554464299441
+Responsabilidade_Civil,True,seguranca,caro,0.17565562060255901
+Queda_de_Raio,True,seguranca,medio,0.8631789223498866
+Desmoronamento,True,ambiental,medio,0.5414612202490917
+Desastres_Naturais,False,ambiental,medio,0.2997118905373848
+Danos_Eletricos,False,ambiental,caro,0.42268722119765845
+Roubo_Furto,False,ambiental,barato,0.028319671145462966
+Conteudo_Residencial,False,ambiental,caro,0.12428327649956394
+Vidros,False,ambiental,caro,0.6706244146936303
+Vendaval,False,estrutural,barato,0.6471895115742501
+Curto_Circuito,False,seguranca,medio,0.6153851114812539
+Assistencia_Encanador,False,estrutural,caro,0.38367755426188344
+Assistencia_Chaveiro,False,seguranca,medio,0.997209935789211
+Equipamentos_Eletronicos,False,seguranca,barato,0.9808353387762301
