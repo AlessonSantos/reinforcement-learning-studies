@@ -39,7 +39,7 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 
 **A matemática:** observa-se $c \in \mathbb{R}^p$, o vetor de perfil do cliente.
 
-**O exemplo rodando:** $c = [0{,}8,\ 1{,}0]$ (score de risco normalizado; indicador de imóvel de alto valor).
+**O exemplo rodando:** $c = [\text{0,8},\ \text{1,0}]$ (score de risco normalizado; indicador de imóvel de alto valor).
 
 **O que entra / o que sai:** entra: nada. Sai: $c$, usado em todas as etapas seguintes desta rodada.
 
@@ -100,9 +100,9 @@ $H_\theta$, por sua vez, mede a incerteza restante sobre $\theta$ — e dela der
 
 **A fórmula da variância de $\eta(i)$ vem de uma propriedade simples de probabilidade.** Sob a aproximação de Laplace (Etapa 9), $\theta$ passa a ser tratado como uma variável aleatória aproximadamente gaussiana: $\theta \sim \mathcal N(\hat\theta, H_\theta^{-1})$ — $H_\theta^{-1}$ fazendo o papel da covariância dessa gaussiana. $\eta(i)=\theta^Tx(i)$ é uma **combinação linear** de $\theta$ — um produto interno com o vetor fixo $x(i)$. Existe um resultado padrão de probabilidade para esse caso: se um vetor aleatório $\theta$ tem covariância $\Sigma$, a variância de qualquer combinação linear $a^T\theta$ (com $a$ fixo) é $a^T\Sigma a$. Aplicando isso com $a=x(i)$ e $\Sigma=H_\theta^{-1}$, chega-se exatamente à fórmula usada acima — não é uma fórmula nova, é a mesma propriedade de variância de combinação linear aplicada à aproximação gaussiana que $H_\theta$ representa.
 
-**O exemplo rodando:** suponha que, para o Cliente A, o modelo já calculou $\eta(\text{Desastres Naturais})=0{,}90$, com $\text{Var}[\eta(\text{Desastres})] = 0{,}05$ (uma incerteza relativamente baixa, refletindo que $\theta$ já viu bastante dado informativo nessa região do espaço de contexto). A recompensa esperada é:
+**O exemplo rodando:** suponha que, para o Cliente A, o modelo já calculou $\eta(\text{Desastres Naturais})=\text{0,90}$, com $\text{Var}[\eta(\text{Desastres})] = \text{0,05}$ (uma incerteza relativamente baixa, refletindo que $\theta$ já viu bastante dado informativo nessa região do espaço de contexto). A recompensa esperada é:
 
-$$\hat p(\text{Desastres Naturais}) = \sigma(0{,}90) \approx 0{,}71$$
+$$\hat p(\text{Desastres Naturais}) = \sigma(\text{0,90}) \approx \text{0,71}$$
 
 **O que entra / o que sai:** entra: $c, f_i, \theta, H_\theta$ (do reajuste mais recente — Etapa 9). Sai: $\eta(i), \text{Var}[\eta(i)]$ para cada uma das 10 coberturas opcionais, usados na Etapa 5.
 
@@ -133,9 +133,9 @@ $$\text{logit}(b_i) = \log\left(\frac{b_i}{1-b_i}\right), \qquad \text{Var}\big[
 
 **Por que essa reserva é necessária, e por que a divisão precisa ser independente do resultado.** Se as mesmas observações alimentassem tanto o treino de $\theta$ quanto o cálculo do baseline, os dois deixariam de ser estatisticamente independentes — a comparação entre eles ficaria enviesada. A separação evita isso por construção. A regra que decide se uma rodada aleatória vai para a reserva do baseline ou para o treino de $\theta$ precisa depender só de algo definido **antes** de conhecer a resposta do cliente (por exemplo, um identificador da rodada, nunca do resultado observado).
 
-**O exemplo rodando:** suponha que, na fatia reservada, "Desastres Naturais" foi ofertada aleatoriamente $n_i=120$ vezes, com $b_i=0{,}40$ (40% de aceitação):
+**O exemplo rodando:** suponha que, na fatia reservada, "Desastres Naturais" foi ofertada aleatoriamente $n_i=120$ vezes, com $b_i=\text{0,40}$ (40% de aceitação):
 
-$$\text{logit}(0{,}40) \approx -0{,}405, \qquad \text{Var}\big[\text{logit}(0{,}40)\big] = \frac{1}{120\times 0{,}40\times 0{,}60} \approx 0{,}0347$$
+$$\text{logit}(\text{0,40}) \approx -\text{0,405}, \qquad \text{Var}\big[\text{logit}(\text{0,40})\big] = \frac{1}{120\times \text{0,40}\times \text{0,60}} \approx \text{0,0347}$$
 
 **O que entra / o que sai:** entra: as observações reservadas de cada cobertura (acumuladas desde o início, atualizadas na Etapa 9). Sai: $\text{logit}(b_i)$ e sua variância, para cada uma das 10 coberturas opcionais, usados na Etapa 5.
 
@@ -173,7 +173,7 @@ $$H_0: D(i) \le \ln(R) \qquad\text{vs.}\qquad H_1: D(i) > \ln(R)$$
 
 **A regra de decisão** — rejeita-se $H_0$ (oferta) quando o limite inferior do intervalo de confiança de $D(i)$ supera o logaritmo da razão de chances mínima:
 
-$$D(i) - z\sqrt{\text{Var}[D(i)]} > \ln(R), \qquad z=1{,}645 \text{ (95 por cento de confiança, um lado)}$$
+$$D(i) - z\sqrt{\text{Var}[D(i)]} > \ln(R), \qquad z=\text{1,645} \text{ (95 por cento de confiança, um lado)}$$
 
 $$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \lbrace \text{10 opcionais}\rbrace : D(i) - z\sqrt{\text{Var}[D(i)]} > \ln(R) \Big\rbrace$$
 
@@ -188,7 +188,7 @@ Fazendo $R=1$ — nenhuma margem de negócio adicional, já que $\ln(1)=0$ —, 
 
 **Por que razão de chances, e não um "lift" multiplicativo direto sobre a probabilidade.** Um lift expresso diretamente sobre $\hat p(i)$ (ex.: "exigir o dobro da probabilidade do baseline") deixa de fazer sentido conforme o baseline cresce — para um baseline de 60%, um lift de 2 vezes exigiria 120%, um valor impossível. Razão de chances não sofre dessa limitação: chances (odds) crescem sem teto superior conforme a probabilidade se aproxima de 100%, então uma razão de chances de 1,5 ou 2 continua sendo um valor atingível em qualquer faixa de baseline, por mais alto que ele seja.
 
-**Uma propriedade útil da razão de chances constante: a exigência em pontos percentuais se ajusta sozinha.** A tabela abaixo mostra, para $R=1{,}5$, a probabilidade mínima exigida em função da taxa de referência:
+**Uma propriedade útil da razão de chances constante: a exigência em pontos percentuais se ajusta sozinha.** A tabela abaixo mostra, para $R=\text{1,5}$, a probabilidade mínima exigida em função da taxa de referência:
 
 | Baseline ($b_i$) | Probabilidade mínima exigida | Exigência em pontos percentuais |
 |---|---|---|
@@ -210,29 +210,29 @@ Fazendo $R=1$ — nenhuma margem de negócio adicional, já que $\ln(1)=0$ —, 
 
 Repare que a exigência em pontos percentuais cresce, atinge um pico na faixa de 40% a 50%, e depois diminui conforme o baseline continua subindo — uma consequência automática da geometria do funil logístico (a curva "achata" perto das duas pontas), sem nenhuma regra especial: o sistema naturalmente pede menos pontos percentuais a mais de uma cobertura que já converte muito bem, e mais de uma que converte pouco.
 
-**O exemplo rodando**, agora com $R=1{,}5$ — que corresponde a $\ln(R)\approx0{,}405$ na escala log-odds:
+**O exemplo rodando**, agora com $R=\text{1,5}$ — que corresponde a $\ln(R)\approx\text{0,405}$ na escala log-odds:
 
-Para Desastres Naturais, com $\eta=0{,}90, \text{Var}[\eta]=0{,}05$ (Etapa 3), e $\text{logit}(b)=-0{,}405, \text{Var}[\text{logit}(b)]=0{,}0347$ (Etapa 4):
+Para Desastres Naturais, com $\eta=\text{0,90}, \text{Var}[\eta]=\text{0,05}$ (Etapa 3), e $\text{logit}(b)=-\text{0,405}, \text{Var}[\text{logit}(b)]=\text{0,0347}$ (Etapa 4):
 
-$$D(\text{Desastres}) = 0{,}90 - (-0{,}405) = 1{,}305, \qquad \text{Var}[D] = 0{,}0847, \qquad \sqrt{\text{Var}[D]} \approx 0{,}291$$
+$$D(\text{Desastres}) = \text{0,90} - (-\text{0,405}) = \text{1,305}, \qquad \text{Var}[D] = \text{0,0847}, \qquad \sqrt{\text{Var}[D]} \approx \text{0,291}$$
 
-$$D - z\sqrt{\text{Var}[D]} - \ln(R) = 1{,}305 - 1{,}645\times 0{,}291 - 0{,}405 \approx 0{,}421 > 0 \quad\Rightarrow\quad \textbf{oferta}$$
+$$D - z\sqrt{\text{Var}[D]} - \ln(R) = \text{1,305} - \text{1,645}\times \text{0,291} - \text{0,405} \approx \text{0,421} > 0 \quad\Rightarrow\quad \textbf{oferta}$$
 
-Para Danos Elétricos, com $\eta=0{,}201, \text{Var}[\eta]=0{,}09$, e $b=0{,}50$ com $n=80$ — logo $\text{logit}(b)=0, \text{Var}[\text{logit}(b)]=0{,}05$:
+Para Danos Elétricos, com $\eta=\text{0,201}, \text{Var}[\eta]=\text{0,09}$, e $b=\text{0,50}$ com $n=80$ — logo $\text{logit}(b)=0, \text{Var}[\text{logit}(b)]=\text{0,05}$:
 
-$$D(\text{Danos Elétricos}) = 0{,}201, \qquad \text{Var}[D] = 0{,}14$$
+$$D(\text{Danos Elétricos}) = \text{0,201}, \qquad \text{Var}[D] = \text{0,14}$$
 
-$$D - z\sqrt{\text{Var}[D]} - \ln(R) = 0{,}201 - 1{,}645\times 0{,}374 - 0{,}405 \approx -0{,}819 < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
+$$D - z\sqrt{\text{Var}[D]} - \ln(R) = \text{0,201} - \text{1,645}\times \text{0,374} - \text{0,405} \approx -\text{0,819} < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
 
-Um terceiro caso mostra o efeito prático da margem de negócio. Para Assistência Encanador, com $\eta=-0{,}080, \text{Var}[\eta]=0{,}015$ (modelo bem informado), e $b=0{,}40$ com $n=300$ (baseline bem amostrado) — logo $\text{logit}(b)=-0{,}405, \text{Var}[\text{logit}(b)]=0{,}0139$:
+Um terceiro caso mostra o efeito prático da margem de negócio. Para Assistência Encanador, com $\eta=-\text{0,080}, \text{Var}[\eta]=\text{0,015}$ (modelo bem informado), e $b=\text{0,40}$ com $n=300$ (baseline bem amostrado) — logo $\text{logit}(b)=-\text{0,405}, \text{Var}[\text{logit}(b)]=\text{0,0139}$:
 
-$$D(\text{Assistência Encanador}) = -0{,}080 - (-0{,}405) = 0{,}325, \qquad \text{Var}[D] = 0{,}0289, \qquad \sqrt{\text{Var}[D]} \approx 0{,}170$$
+$$D(\text{Assistência Encanador}) = -\text{0,080} - (-\text{0,405}) = \text{0,325}, \qquad \text{Var}[D] = \text{0,0289}, \qquad \sqrt{\text{Var}[D]} \approx \text{0,170}$$
 
-$$D - z\sqrt{\text{Var}[D]} = 0{,}325 - 1{,}645\times 0{,}170 \approx 0{,}045$$
+$$D - z\sqrt{\text{Var}[D]} = \text{0,325} - \text{1,645}\times \text{0,170} \approx \text{0,045}$$
 
 Isso já bastaria para confirmar alguma vantagem estatística sobre a referência, sem nenhuma margem de negócio — mas, subtraindo $\ln(R)$:
 
-$$D - z\sqrt{\text{Var}[D]} - \ln(R) \approx 0{,}045 - 0{,}405 = -0{,}360 < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
+$$D - z\sqrt{\text{Var}[D]} - \ln(R) \approx \text{0,045} - \text{0,405} = -\text{0,360} < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
 
 Mesmo com significância estatística suficiente para confirmar alguma vantagem, ela não é grande o bastante para justificar a razão de chances mínima exigida pelo negócio — o teste distingue "existe alguma diferença" de "a diferença vale a pena".
 
@@ -369,11 +369,11 @@ Ao calcular a incerteza (matriz $H_\theta$) via aproximação de Laplace, a fór
 
 $$H_\theta = \lambda I + \sum_{n=1}^{N} p_n(1-p_n) x_n x_n^{T}$$
 
-**Analogia do problema:** imagine um jurado que só atualiza o quanto confia num veredito quando o caso é "difícil" (meio a meio). Se o caso é óbvio — todo mundo já sabe a resposta —, ele para de prestar atenção, mesmo vendo o mesmo padrão se confirmar centenas de vezes. É exatamente isso que $p_n(1-p_n)$ faz: esse peso é **máximo** quando $p_n\approx 0{,}5$ (caso "difícil") e **quase zero** quando $p_n$ está perto de 0 ou 1 (caso "óbvio" — ex.: uma cobertura quase sempre mantida).
+**Analogia do problema:** imagine um jurado que só atualiza o quanto confia num veredito quando o caso é "difícil" (meio a meio). Se o caso é óbvio — todo mundo já sabe a resposta —, ele para de prestar atenção, mesmo vendo o mesmo padrão se confirmar centenas de vezes. É exatamente isso que $p_n(1-p_n)$ faz: esse peso é **máximo** quando $p_n\approx \text{0,5}$ (caso "difícil") e **quase zero** quando $p_n$ está perto de 0 ou 1 (caso "óbvio" — ex.: uma cobertura quase sempre mantida).
 
 **Por que isso não é um defeito da nossa implementação — é uma propriedade real da regressão logística.** À primeira vista, parece um paradoxo: por que a incerteza ficaria alta justamente para as coberturas mais bem confirmadas? A resposta exige separar duas perguntas que parecem a mesma coisa, mas não são: "estou confiante sobre o que vai acontecer?" — a probabilidade $p(i)$ — e "estou confiante sobre o valor exato de $\eta(i)$, o log-odds que gera essa probabilidade?" — essa segunda pergunta é o que $\text{Var}[\eta(i)]$ mede, e a resposta genuína pode ser "não", mesmo quando a primeira resposta é um "sim" categórico.
 
-Isso acontece porque o funil $\sigma(\cdot)$ **satura** nos extremos: duas hipóteses bem diferentes de $\eta(i)$ — digamos, $\eta=4$ (equivale a $p\approx 0{,}982$) e $\eta=7$ (equivale a $p\approx 0{,}999$) — produzem, na prática, o mesmo comportamento observável: quase sempre "aceitou". Centenas de observações confirmam que $\eta(i)$ está "em algum lugar bem alto", mas não conseguem discriminar **exatamente quão alto**, porque uma faixa larga de valores de $\eta$ diferentes comprime para quase a mesma probabilidade. É isso que $p_n(1-p_n)$ mede de verdade: não "quão certo o resultado parece", mas "quanto essa observação ajuda a **localizar precisamente** $\eta$ no espaço log-odds" — e, perto dos extremos, ela ajuda genuinamente pouco. Se você removesse toda a engenharia deste documento e usasse a aproximação de Laplace exatamente como a teoria estatística clássica define, esse comportamento apareceria do mesmo jeito — não é uma falha de implementação, é assim que a matemática funciona.
+Isso acontece porque o funil $\sigma(\cdot)$ **satura** nos extremos: duas hipóteses bem diferentes de $\eta(i)$ — digamos, $\eta=4$ (equivale a $p\approx \text{0,982}$) e $\eta=7$ (equivale a $p\approx \text{0,999}$) — produzem, na prática, o mesmo comportamento observável: quase sempre "aceitou". Centenas de observações confirmam que $\eta(i)$ está "em algum lugar bem alto", mas não conseguem discriminar **exatamente quão alto**, porque uma faixa larga de valores de $\eta$ diferentes comprime para quase a mesma probabilidade. É isso que $p_n(1-p_n)$ mede de verdade: não "quão certo o resultado parece", mas "quanto essa observação ajuda a **localizar precisamente** $\eta$ no espaço log-odds" — e, perto dos extremos, ela ajuda genuinamente pouco. Se você removesse toda a engenharia deste documento e usasse a aproximação de Laplace exatamente como a teoria estatística clássica define, esse comportamento apareceria do mesmo jeito — não é uma falha de implementação, é assim que a matemática funciona.
 
 **O que o piso $\nu$ realmente faz, então — uma decisão de engenharia, não uma correção estatística.** $\nu$ não torna a estimativa "mais certa" nem corrige um erro de cálculo: ele é uma escolha deliberada de tratar observações extremas como se carregassem um pouco mais de informação sobre $\eta$ do que elas genuinamente carregam, porque o custo prático de uma cobertura ficar presa (Etapa 5 nunca ganhando confiança suficiente para ofertá-la, mesmo com evidência esmagadora) supera o custo de abrir mão de um pouco de rigor estatístico. É uma troca consciente, não um "conserto" que devolve a resposta matematicamente correta.
 
@@ -482,7 +482,7 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 | Parâmetro | Onde aparece | O que controla | Ponto de partida sugerido |
 |---|---|---|---|
 | $\lambda$ (regularização) | Etapas 0, 3 e 9 | O quanto $\theta$ fica "presa" perto de zero antes de haver evidência forte | Testar valores entre 0,5 e 2,0 |
-| $\nu$ (piso de curvatura) | Etapas 3 e 9 | Evita que a variância de itens muito certos pare de encolher com mais dados | Algo entre 0,02 e 0,10 (referência: $p(1-p)$ tem máximo 0,25 em $p=0{,}5$) |
+| $\nu$ (piso de curvatura) | Etapas 3 e 9 | Evita que a variância de itens muito certos pare de encolher com mais dados | Algo entre 0,02 e 0,10 (referência: $p(1-p)$ tem máximo 0,25 em $p=\text{0,5}$) |
 | $\epsilon$ (fixo, definido pela equipe) | Etapa 2 | Qual fração das rodadas continua sendo oferta aleatória, indefinidamente | Um ponto de partida razoável é algo entre 0,05 e 0,15 — precisa ser maior que zero, sem exceção |
 | $\rho$ (fração reservada para o baseline) | Etapas 4 e 9 | Quanto do dado aleatório fica reservado só para calibrar a referência, em vez de treinar $\theta$ | Um ponto de partida razoável é 30%, ajustável conforme o volume de tráfego |
 | $z$ (nível de confiança do teste) | Etapa 5 | Quão conservadora é a exigência de significância para ofertar | 1,645 (95% de confiança, um lado) é um ponto de partida padrão |
