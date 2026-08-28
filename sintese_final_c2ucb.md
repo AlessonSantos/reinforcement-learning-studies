@@ -7,7 +7,7 @@
 
 Este não é um registro cronológico de cada mensagem trocada — é uma reconstrução organizada por tema, cobrindo o raciocínio que efetivamente sobreviveu e chegou à versão final em produção. Cada seção termina numa decisão; onde uma decisão foi revertida depois, isso está registrado explicitamente, com o motivo.
 
-**A arquitetura final está documentada em detalhe, passo a passo, em `pipeline_c2ucb_seguro_didatico_v4.md`** — este documento é o mapa de como chegamos até ali, não uma repetição do pipeline em si.
+**A arquitetura final está documentada em detalhe, passo a passo, em `pipeline_c2ucb_seguro_didatico_v5.md`** — este documento é o mapa de como chegamos até ali, não uma repetição do pipeline em si.
 
 ---
 
@@ -104,17 +104,33 @@ Um threshold único pressupõe implicitamente que aceitar e rejeitar uma oferta 
 2. Refinamento: usar o **limite superior do intervalo de Wilson** de $b_i$ como threshold, protegendo contra decidir com base num baseline ainda pouco amostrado.
 3. Versão final: abandonar a comparação pontual em favor de um **teste de significância formal**, combinando a incerteza dos dois lados — a de $\eta(i)$ (via $H_\theta$) e a do baseline (via método delta).
 
-### 7.3 A fórmula final
+### 7.3 A fórmula final, já com a margem de negócio
 
-$$D(i) = \eta(i) - \text{logit}(b_i), \qquad \text{Var}[D(i)] = \text{Var}[\eta(i)] + \text{Var}[\text{logit}(b_i)]$$
+$D(i)$ é, por construção, o logaritmo de uma razão de chances entre a propensão estimada e a taxa de referência — pela propriedade $\ln(a)-\ln(b)=\ln(a/b)$, já que $\eta(i)$ e $\text{logit}(b_i)$ são ambos log-odds:
 
-$$\text{Oferta} \iff D(i) - z\sqrt{\text{Var}[D(i)]} > 0$$
+$$D(i) = \eta(i) - \text{logit}(b_i) = \ln\left(\frac{\text{odds}(i)}{\text{odds}(b_i)}\right), \qquad \text{Var}[D(i)] = \text{Var}[\eta(i)] + \text{Var}[\text{logit}(b_i)]$$
 
-Essa é a Etapa 5 do pipeline final.
+$$\text{Oferta} \iff D(i) - z\sqrt{\text{Var}[D(i)]} > \ln(R)$$
+
+onde $R$ é a razão de chances mínima exigida pelo negócio, além da significância estatística — com $R=1$ — nenhuma margem extra, já que $\ln(1)=0$ —, a regra volta a exigir só que exista alguma vantagem estatisticamente significativa. Essa é a Etapa 5 do pipeline final.
 
 ### 7.4 Por que somar as duas variâncias, e não checar sobreposição de intervalos
 
 Checar se dois intervalos de confiança separados se sobrepõem é **mais conservador** do que um teste de diferença apropriado — um resultado documentado na literatura (Schenker & Gentleman, 2001): usar dois intervalos de 95% e checar sobreposição corresponde, na prática, a um teste com confiança próxima de 99%, não 95%.
+
+### 7.5 A margem de negócio: por que razão de chances, e não lift de probabilidade
+
+Uma vez com o teste de significância implementado, surgiu uma pergunta legítima: "maior que o baseline" garante confiabilidade estatística, mas não necessariamente uma recomendação que maximize a qualidade prática (precisão/revocação) da oferta. A tentação natural é exigir uma margem — um "lift" mínimo sobre a probabilidade.
+
+**Por que lift multiplicativo de probabilidade não funciona.** Ele deixa de ser factível conforme o baseline sobe: um baseline de 60% com lift de 2× exigiria 120%, impossível. Essa restrição fica mais severa quanto maior o baseline — o oposto do que se quer numa régua de negócio genérica.
+
+**A solução: razão de chances, não lift de probabilidade.** Como $D(i)$ já vive em log-odds, ele já é o logaritmo de uma razão de chances — não é preciso nenhuma estrutura nova. Substituindo o ponto de corte de $D(i)$ de $0$ (razão de chances de 1, "nenhuma vantagem") por $\ln(R)$ (razão de chances $R$, "vantagem relevante"), a mesma fórmula generaliza sem quebrar em nenhuma faixa de baseline — chances não têm teto superior, diferente de probabilidade.
+
+**A derivação, em cinco passos:** (1) $D(i)$ é o log de uma razão de chances, por construção; (2) o teste original testa $H_0: \text{OR}(i)\le1$; (3) generaliza-se para $H_0: \text{OR}(i)\le R$; (4) aplicando log nos dois lados, a hipótese vira $D(i)\le\ln(R)$; (5) a estatística de teste desloca o ponto de corte de $0$ para $\ln(R)$, sem alterar $D(i)$ nem $\text{Var}[D(i)]$.
+
+**Uma propriedade favorável, descoberta ao testar numericamente:** para $R$ fixo, a exigência em pontos percentuais de probabilidade cresce, atinge um pico na faixa de 40–50% de baseline, e depois diminui — o funil logístico "achata" nas duas pontas automaticamente. Isso resolve, sem nenhuma regra especial, a preocupação de que uma cobertura com baseline já alto (ex.: 70%) não deveria precisar de uma exigência tão rigorosa em pontos percentuais quanto uma de baseline baixo.
+
+**Decisão final:** o teste de significância ganha um parâmetro de negócio $R$ (a razão de chances mínima), com $R=1$ como comportamento padrão equivalente ao teste original — uma generalização, não uma substituição.
 
 ---
 
@@ -238,7 +254,9 @@ Essa pergunta foi revisitada diretamente ao final da jornada, depois de todos os
 
 ## 16. A implementação final
 
-Dois scripts, sem uso de classes, com funções documentadas — `treino_batch.py` (constrói $f_i$ a partir do catálogo, monta $x(i)$, ajusta $\theta$ via MAP com `scipy.optimize`, calcula $H_\theta$ com o piso de curvatura, calcula o baseline por cobertura opcional respeitando a reserva $\rho$ e a exclusão de adições espontâneas, salva tudo num pickle) e `escoragem_cliente.py` (carrega o pickle, escora um cliente por vez contra as 14 coberturas — obrigatórias sempre entram, opcionais passam pelo teste de significância completo). Um gerador de dados sintéticos (`gerar_dados_exemplo.py`) permite testar o pipeline de ponta a ponta sem dados reais.
+**Primeira versão** — `treino_batch.py` (constrói $f_i$ a partir do catálogo via codificação one-hot própria, monta $x(i)$, ajusta $\theta$ via MAP com `scipy.optimize` escrito à mão, calcula $H_\theta$ com o piso de curvatura, calcula o baseline por cobertura opcional respeitando a reserva $\rho$ e a exclusão de adições espontâneas) e `escoragem_cliente.py` (escora um cliente por vez).
+
+**Evolução para a arquitetura real de produção** — dado que as variáveis explicativas passaram a chegar já tratadas (dummies e numéricas prontas) via feature store, e que a escoragem passou a ser em lote, não cliente por cliente: `treino_batch_v2.py` deixa de fazer qualquer codificação categórica (só monta o termo de interação $c\otimes f_i$, de forma vetorizada) e ajusta $\theta$ via `sklearn.linear_model.LogisticRegression` (com $C=1/\lambda$ e `fit_intercept=False`, reproduzindo exatamente a mesma penalização do MAP) — $H_\theta$ continua calculada manualmente, já que o sklearn não a expõe. `escoragem_lote_v2.py` escora um DataFrame inteiro de uma vez (uma linha por combinação cliente×cobertura), reaproveitando `modelo_sklearn.decision_function` e `.predict_proba`, com $H_\theta^{-1}$ invertida uma única vez e reaproveitada via `einsum` para todas as linhas — e já incorpora o parâmetro de razão de chances mínima $R$ (Seção 7.5) na função de teste de significância.
 
 ---
 
@@ -253,7 +271,7 @@ Dois scripts, sem uso de classes, com funções documentadas — `treino_batch.p
 | 5 | Onde está o termo de sinergia/canibalização ($\phi$)? | Retirado por faseamento (v1 mais simples); dados continuam sendo coletados para reintrodução futura |
 | 6 | Onde está a fadiga? | Retirada junto com $\phi$, pela mesma lógica de faseamento |
 | 7 | Por que não usar mais o bônus de exploração (UCB)? | Ele não é uma probabilidade calibrada, incomparável a uma taxa de conversão real |
-| 8 | Como decidir a oferta, sem bônus? | Teste de significância: $D(i)-z\sqrt{\text{Var}[D(i)]}>0$ |
+| 8 | Como decidir a oferta, sem bônus? | Teste de significância com margem de negócio: $D(i)-z\sqrt{\text{Var}[D(i)]}>\ln(R)$ |
 | 9 | Como o baseline é protegido de viés? | Fatia reservada $\rho$, decidida antes do resultado; adições espontâneas nunca contam |
 | 10 | $\epsilon$ decai com o tempo? | Não — fixo, definido pela equipe, nunca chega a zero |
 | 11 | Obrigatórias entram no treino? | Não — $y_i$ sempre 1, sem variação, sem informação |
@@ -265,4 +283,4 @@ Dois scripts, sem uso de classes, com funções documentadas — `treino_batch.p
 
 ## O algoritmo consolidado, em um parágrafo
 
-Um único $\theta$, compartilhado entre as 10 coberturas opcionais, estimado por máxima verossimilhança a posteriori sobre uma verossimilhança de Bernoulli — nunca treinado com as 4 coberturas obrigatórias, que não têm variação para ensinar. A cada rodada, uma variável $Z_t\sim\text{Bernoulli}(\epsilon)$, com $\epsilon$ fixo definido pela equipe, decide entre uma rota aleatória (sorteando um subconjunto entre as opcionais) e a rota do modelo, que testa cada cobertura opcional de forma independente contra sua taxa de referência (calculada só sobre uma fatia reservada e exógena dos dados aleatórios), via um teste de significância que soma as incertezas dos dois lados. A incerteza de $\theta$ é aproximada via Laplace, com um piso de curvatura que garante a variância continuar encolhendo mesmo para itens quase certos — multiplicando sempre a direção específica de cada observação, nunca de forma isotrópica. O tamanho do pacote final emerge dessas decisões independentes, sem $k$ fixo e sem nenhum processo guloso.
+Um único $\theta$, compartilhado entre as 10 coberturas opcionais, estimado por máxima verossimilhança a posteriori sobre uma verossimilhança de Bernoulli — nunca treinado com as 4 coberturas obrigatórias, que não têm variação para ensinar. A cada rodada, uma variável $Z_t\sim\text{Bernoulli}(\epsilon)$, com $\epsilon$ fixo definido pela equipe, decide entre uma rota aleatória (sorteando um subconjunto entre as opcionais) e a rota do modelo, que testa cada cobertura opcional de forma independente contra sua taxa de referência (calculada só sobre uma fatia reservada e exógena dos dados aleatórios), via um teste de significância que soma as incertezas dos dois lados e exige uma razão de chances mínima $R$ definida pelo negócio, não só a ausência de diferença. A incerteza de $\theta$ é aproximada via Laplace, com um piso de curvatura que garante a variância continuar encolhendo mesmo para itens quase certos — multiplicando sempre a direção específica de cada observação, nunca de forma isotrópica. O tamanho do pacote final emerge dessas decisões independentes, sem $k$ fixo e sem nenhum processo guloso.

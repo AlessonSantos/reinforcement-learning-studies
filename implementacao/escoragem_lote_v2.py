@@ -87,10 +87,19 @@ def calcular_eta_e_variancia_lote(df, colunas_cliente, colunas_cobertura, modelo
     return eta, variancia_eta, p_estimado
 
 
-def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_cobertura, z_critico):
+def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_cobertura,
+                               z_critico, razao_de_chances_minima=1.0):
     """
     Roda o teste de significância da Etapa 5 para um lote inteiro de uma vez,
-    buscando o baseline correspondente a cada linha pelo id da cobertura.
+    exigindo que a diferença entre o modelo e o baseline corresponda a pelo
+    menos uma razão de chances mínima -- não só qualquer diferença positiva.
+
+    A razão de chances mínima entra como uma margem subtraída do limite
+    inferior do intervalo de confiança de D(i), na escala log-odds
+    (ln(razao_de_chances_minima)) -- deixando D(i) e sua variância
+    inalterados. Com razao_de_chances_minima=1.0 (padrão), ln(1)=0 e o teste
+    volta a exigir só que exista alguma vantagem estatisticamente
+    significativa, sem nenhuma margem extra de negócio.
 
     Parâmetros
     ----------
@@ -102,6 +111,16 @@ def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_co
         modelo["baseline_por_cobertura"].
     z_critico : float
         Valor crítico do teste (ex.: 1,645 para 95% de confiança, um lado).
+    razao_de_chances_minima : float ou dict
+        A razão de chances mínima exigida entre a propensão estimada e a
+        taxa de referência para considerar a diferença relevante o
+        suficiente para ofertar. 1.0 (padrão) equivale ao teste sem margem de
+        negócio. Valores maiores que 1 exigem uma vantagem mínima mais forte
+        (ex.: 1.5 exige pelo menos 50% mais chance que a referência). Pode
+        ser um único valor (aplicado a todas as coberturas) ou um dict
+        {cobertura_id: valor}, para margens diferentes por cobertura. Quem
+        chama a função informa a razão de chances diretamente -- o logaritmo
+        é calculado internamente.
 
     Retorna
     -------
@@ -122,9 +141,14 @@ def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_co
             var_logit_b[idx] = info["var_logit_b"]
             tem_baseline[idx] = True
 
+    if isinstance(razao_de_chances_minima, dict):
+        margem_log = np.log(np.array([razao_de_chances_minima.get(c, 1.0) for c in cobertura_ids]))
+    else:
+        margem_log = np.log(razao_de_chances_minima)
+
     d = eta - logit_b
     variancia_d = variancia_eta + var_logit_b
-    limite_inferior = d - z_critico * np.sqrt(variancia_d)
+    limite_inferior = d - z_critico * np.sqrt(variancia_d) - margem_log
     passa_no_teste = tem_baseline & (limite_inferior > 0)
 
     return {
@@ -136,7 +160,7 @@ def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_co
     }
 
 
-def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id"):
+def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id", razao_de_chances_minima=1.0):
     """
     Escora um lote inteiro de observações (cliente x cobertura) de uma vez.
 
@@ -153,6 +177,11 @@ def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id"):
         Saída de carregar_modelo.
     coluna_cobertura_id : str
         Nome da coluna com o id da cobertura em df_scoring.
+    razao_de_chances_minima : float ou dict
+        A razão de chances mínima exigida pelo negócio, além da significância
+        estatística, para uma cobertura opcional entrar no pacote (ver
+        testar_significancia_lote). 1.0 (padrão) equivale ao teste sem
+        nenhuma margem de negócio adicional.
 
     Retorna
     -------
@@ -186,6 +215,7 @@ def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id"):
         resultado_teste = testar_significancia_lote(
             df_opcionais[coluna_cobertura_id].to_numpy(), eta, variancia_eta,
             modelo["baseline_por_cobertura"], modelo["z_critico"],
+            razao_de_chances_minima=razao_de_chances_minima,
         )
 
         df.loc[idx_opcionais, "eta"] = eta
