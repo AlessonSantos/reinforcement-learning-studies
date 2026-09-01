@@ -132,6 +132,26 @@ Uma vez com o teste de significância implementado, surgiu uma pergunta legítim
 
 **Decisão final:** o teste de significância ganha um parâmetro de negócio $R$ (a razão de chances mínima), com $R=1$ como comportamento padrão equivalente ao teste original — uma generalização, não uma substituição.
 
+### 7.6 O piso absoluto: quando "abaixo da média" ainda é bastante provável
+
+Depois de fechar $R$, surgiu um caso de borda genuíno: em coberturas de baseline já alto (ex.: 80%), um cliente pode ter propensão estimada abaixo da média daquela cobertura específica (ex.: 70%) e, mesmo assim, ter uma probabilidade absoluta de aceitação bastante alta. $D(i)$, sozinho, recusaria essa oferta — corretamente, do ponto de vista relativo — mas isso pode custar uma conversão real que valeria a pena capturar.
+
+**A solução: um segundo teste, complementar, contra um piso absoluto $P$.** Em vez de comparar contra o baseline, compara-se $\eta(i)$ direto contra $\text{logit}(P)$ — a mesma disciplina do teste relativo (limite inferior do intervalo, nunca a estimativa pontual):
+
+$$\eta(i) - z\sqrt{\text{Var}[\eta(i)]} > \text{logit}(P)$$
+
+Como $P$ é uma constante definida pela equipe, não uma quantidade estimada, não há nenhuma variância de baseline a somar — só a incerteza do próprio modelo sobre $\eta(i)$.
+
+**Os dois testes se combinam com "ou", não "e":** qualquer um bastando para ofertar.
+
+$$\big(D(i) - z\sqrt{\text{Var}[D(i)]} > \ln(R)\big) \ \lor \ \big(\eta(i) - z\sqrt{\text{Var}[\eta(i)]} > \text{logit}(P)\big)$$
+
+$R$ responde "esse cliente é melhor que a média o suficiente?" (heterogeneidade relativa); $P$ responde "a probabilidade absoluta já basta, mesmo sem comparação?" — perguntas diferentes, daí a necessidade das duas, combinadas sem que uma substitua a outra.
+
+**Por que $P$ tem um piso conceitual em 50%, mas não deveria operar perto dele.** Abaixo de 50%, a leitura "provavelmente vai aceitar" deixa de ser literalmente verdadeira — 50% é o mínimo defensável, não o valor recomendado. Na prática, um $P$ operando bem acima disso (60–75%) evita tanto um piso inativo (nunca acionado) quanto o risco de reabrir, por uma via indireta, o problema de pacote sem nenhum freio de tamanho que motivou a remoção da fadiga (Seção 5) — se $P$ ficar baixo demais, várias coberturas podem cruzá-lo ao mesmo tempo para o mesmo cliente.
+
+**Por que calibrar $P$ e $R$ é diferente de calibrar por otimização de $F_\beta$ — e por que isso foi uma escolha deliberada, não uma limitação.** Sem histórico e sem um time com bagagem estatística para arbitrar um trade-off abstrato de precisão/revocação, um threshold otimizado numericamente (via $F_\beta$) seria opaco e difícil de justificar. $R$ e $P$, por virem de hipóteses nomeadas e explicáveis ("quantas vezes mais chance", "que probabilidade mínima"), preservam exatamente a auditabilidade que motivou todo o pivô do bônus UCB para o teste de significância — e é esse traço, não a performance bruta, que os autores tratam como o diferencial metodológico da heurística perante abordagens convencionais de recomendação.
+
 ---
 
 ## 8. A reserva de dados para o baseline, e a exogeneidade que ela protege
@@ -271,7 +291,7 @@ Essa pergunta foi revisitada diretamente ao final da jornada, depois de todos os
 | 5 | Onde está o termo de sinergia/canibalização ($\phi$)? | Retirado por faseamento (v1 mais simples); dados continuam sendo coletados para reintrodução futura |
 | 6 | Onde está a fadiga? | Retirada junto com $\phi$, pela mesma lógica de faseamento |
 | 7 | Por que não usar mais o bônus de exploração (UCB)? | Ele não é uma probabilidade calibrada, incomparável a uma taxa de conversão real |
-| 8 | Como decidir a oferta, sem bônus? | Teste de significância com margem de negócio: $D(i)-z\sqrt{\text{Var}[D(i)]}>\ln(R)$ |
+| 8 | Como decidir a oferta, sem bônus? | Dois testes via "ou": relativo, $D(i)-z\sqrt{\text{Var}[D(i)]}>\ln(R)$, ou absoluto, $\eta(i)-z\sqrt{\text{Var}[\eta(i)]}>\text{logit}(P)$ |
 | 9 | Como o baseline é protegido de viés? | Fatia reservada $\rho$, decidida antes do resultado; adições espontâneas nunca contam |
 | 10 | $\epsilon$ decai com o tempo? | Não — fixo, definido pela equipe, nunca chega a zero |
 | 11 | Obrigatórias entram no treino? | Não — $y_i$ sempre 1, sem variação, sem informação |
@@ -283,4 +303,4 @@ Essa pergunta foi revisitada diretamente ao final da jornada, depois de todos os
 
 ## O algoritmo consolidado, em um parágrafo
 
-Um único $\theta$, compartilhado entre as 10 coberturas opcionais, estimado por máxima verossimilhança a posteriori sobre uma verossimilhança de Bernoulli — nunca treinado com as 4 coberturas obrigatórias, que não têm variação para ensinar. A cada rodada, uma variável $Z_t\sim\text{Bernoulli}(\epsilon)$, com $\epsilon$ fixo definido pela equipe, decide entre uma rota aleatória (sorteando um subconjunto entre as opcionais) e a rota do modelo, que testa cada cobertura opcional de forma independente contra sua taxa de referência (calculada só sobre uma fatia reservada e exógena dos dados aleatórios), via um teste de significância que soma as incertezas dos dois lados e exige uma razão de chances mínima $R$ definida pelo negócio, não só a ausência de diferença. A incerteza de $\theta$ é aproximada via Laplace, com um piso de curvatura que garante a variância continuar encolhendo mesmo para itens quase certos — multiplicando sempre a direção específica de cada observação, nunca de forma isotrópica. O tamanho do pacote final emerge dessas decisões independentes, sem $k$ fixo e sem nenhum processo guloso.
+Um único $\theta$, compartilhado entre as 10 coberturas opcionais, estimado por máxima verossimilhança a posteriori sobre uma verossimilhança de Bernoulli — nunca treinado com as 4 coberturas obrigatórias, que não têm variação para ensinar. A cada rodada, uma variável $Z_t\sim\text{Bernoulli}(\epsilon)$, com $\epsilon$ fixo definido pela equipe, decide entre uma rota aleatória (sorteando um subconjunto entre as opcionais) e a rota do modelo, que testa cada cobertura opcional de forma independente contra dois critérios complementares — significativamente melhor que sua taxa de referência, por uma razão de chances mínima $R$, ou com probabilidade absoluta acima de um piso $P$ —, qualquer um dos dois bastando. A incerteza de $\theta$ é aproximada via Laplace, com um piso de curvatura que garante a variância continuar encolhendo mesmo para itens quase certos — multiplicando sempre a direção específica de cada observação, nunca de forma isotrópica. O tamanho do pacote final emerge dessas decisões independentes, sem $k$ fixo e sem nenhum processo guloso.

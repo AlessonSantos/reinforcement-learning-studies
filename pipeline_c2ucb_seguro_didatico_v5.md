@@ -28,6 +28,7 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 | $\epsilon$ | probabilidade de a rodada inteira ir pela rota aleatória — um valor **fixo**, definido pela equipe (ver Etapa 2) |
 | $\rho$ | fração das rodadas aleatórias reservada exclusivamente para calcular a taxa de referência de cada cobertura (ver Etapa 4) — nunca usada para treinar $\theta$ |
 | $R$ | a razão de chances mínima exigida pelo negócio para justificar uma oferta, além de existir significância estatística (ver Etapa 5) |
+| $P$ | o piso absoluto de probabilidade exigido pelo negócio — uma segunda via de justificar a oferta, independente da comparação com a referência (ver Etapa 5) |
 
 **O que entra / o que sai:** nada entra. Sai: $\theta, H_\theta$ zerados, e os parâmetros de configuração — $\lambda, \nu, \epsilon, \rho, R$ — definidos, prontos para a Rodada 1.
 
@@ -210,37 +211,73 @@ Fazendo $R=1$ — nenhuma margem de negócio adicional, já que $\ln(1)=0$ —, 
 
 Repare que a exigência em pontos percentuais cresce, atinge um pico na faixa de 40% a 50%, e depois diminui conforme o baseline continua subindo — uma consequência automática da geometria do funil logístico (a curva "achata" perto das duas pontas), sem nenhuma regra especial: o sistema naturalmente pede menos pontos percentuais a mais de uma cobertura que já converte muito bem, e mais de uma que converte pouco.
 
-**O exemplo rodando**, agora com $R=\text{1,5}$ — que corresponde a $\ln(R)\approx\text{0,405}$ na escala log-odds:
+**Uma segunda pergunta, complementar à primeira: a probabilidade absoluta já é alta o suficiente?** O teste contra $R$ responde "esse cliente é melhor que a média da população, o suficiente para o negócio?" — uma pergunta relativa, sobre heterogeneidade entre clientes. Existe um cenário em que essa pergunta, sozinha, recusaria uma oferta que ainda faz sentido: quando o baseline de uma cobertura já é muito alto, um cliente pode estar "abaixo da média" daquela cobertura específica e, mesmo assim, ter uma probabilidade absoluta de aceitação bastante alta — alta o suficiente para justificar a oferta, independentemente de como ele se compara ao resto da população.
+
+Para cobrir esse caso, um segundo teste, complementar ao primeiro, é feito contra um piso absoluto de probabilidade $P$, definido pela equipe:
+
+$$H_0: p(i) \le P \qquad\text{vs.}\qquad H_1: p(i) > P$$
+
+Aplicando a mesma transformação logit usada em $\eta(i)$:
+
+$$H_0: \eta(i) \le \text{logit}(P) \qquad\text{vs.}\qquad H_1: \eta(i) > \text{logit}(P)$$
+
+A regra deste segundo teste segue a mesma disciplina do primeiro — o limite inferior do intervalo de confiança, nunca a estimativa pontual sozinha:
+
+$$\eta(i) - z\sqrt{\text{Var}[\eta(i)]} > \text{logit}(P)$$
+
+Como $P$ é uma constante fixa, não uma quantidade estimada a partir de dados, não existe nenhuma variância de baseline para somar aqui — só a incerteza do próprio modelo sobre $\eta(i)$, a mesma já calculada na Etapa 3.
+
+**A regra de decisão final combina os dois testes com um "ou" — qualquer um dos dois bastando para ofertar:**
+
+$$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \lbrace \text{10 opcionais}\rbrace : \big(D(i) - z\sqrt{\text{Var}[D(i)]} > \ln(R)\big) \ \lor \ \big(\eta(i) - z\sqrt{\text{Var}[\eta(i)]} > \text{logit}(P)\big) \Big\rbrace$$
+
+| Símbolo | Descrição |
+|---|---|
+| $P$ | o piso absoluto de probabilidade exigido pelo negócio — entra em jogo quando o teste relativo, sozinho, recusaria uma cobertura que ainda tem propensão absoluta alta |
+
+**Por que $R$ e $P$ respondem perguntas diferentes, e por isso se combinam com "ou", não com "e".** $R$ decide se vale a pena confiar que esse cliente é melhor que a média daquela cobertura — só faz sentido comparando contra uma referência populacional. $P$ decide se a probabilidade absoluta já basta por si só, sem nenhuma comparação. A maioria das coberturas do catálogo (baseline baixo a moderado) é decidida pelo teste relativo; o piso absoluto age como rede de segurança, relevante sobretudo para as poucas coberturas de baseline já alto, onde "abaixo da média" ainda pode significar "bastante provável".
+
+**O exemplo rodando**, agora com $R=\text{1,5}$ — que corresponde a $\ln(R)\approx\text{0,405}$ na escala log-odds — e $P=\text{0,60}$ — que corresponde a $\text{logit}(P)\approx\text{0,405}$ também, por coincidência numérica deste exemplo:
 
 Para Desastres Naturais, com $\eta=\text{0,90}, \text{Var}[\eta]=\text{0,05}$ (Etapa 3), e $\text{logit}(b)=-\text{0,405}, \text{Var}[\text{logit}(b)]=\text{0,0347}$ (Etapa 4):
 
 $$D(\text{Desastres}) = \text{0,90} - (-\text{0,405}) = \text{1,305}, \qquad \text{Var}[D] = \text{0,0847}, \qquad \sqrt{\text{Var}[D]} \approx \text{0,291}$$
 
-$$D - z\sqrt{\text{Var}[D]} - \ln(R) = \text{1,305} - \text{1,645}\times \text{0,291} - \text{0,405} \approx \text{0,421} > 0 \quad\Rightarrow\quad \textbf{oferta}$$
+$$D - z\sqrt{\text{Var}[D]} - \ln(R) = \text{1,305} - \text{1,645}\times \text{0,291} - \text{0,405} \approx \text{0,421} > 0 \quad\Rightarrow\quad \textbf{oferta (teste relativo)}$$
 
 Para Danos Elétricos, com $\eta=\text{0,201}, \text{Var}[\eta]=\text{0,09}$, e $b=\text{0,50}$ com $n=80$ — logo $\text{logit}(b)=0, \text{Var}[\text{logit}(b)]=\text{0,05}$:
 
 $$D(\text{Danos Elétricos}) = \text{0,201}, \qquad \text{Var}[D] = \text{0,14}$$
 
-$$D - z\sqrt{\text{Var}[D]} - \ln(R) = \text{0,201} - \text{1,645}\times \text{0,374} - \text{0,405} \approx -\text{0,819} < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
+$$D - z\sqrt{\text{Var}[D]} - \ln(R) = \text{0,201} - \text{1,645}\times \text{0,374} - \text{0,405} \approx -\text{0,819} < 0$$
 
-Um terceiro caso mostra o efeito prático da margem de negócio. Para Assistência Encanador, com $\eta=-\text{0,080}, \text{Var}[\eta]=\text{0,015}$ (modelo bem informado), e $b=\text{0,40}$ com $n=300$ (baseline bem amostrado) — logo $\text{logit}(b)=-\text{0,405}, \text{Var}[\text{logit}(b)]=\text{0,0139}$:
+O teste relativo recusa. Como $\eta=\text{0,201}$ corresponde a $p(i)\approx\text{0,55}$, abaixo do piso $P=\text{0,60}$, o teste absoluto também recusa — **não oferta**, pelos dois testes.
 
-$$D(\text{Assistência Encanador}) = -\text{0,080} - (-\text{0,405}) = \text{0,325}, \qquad \text{Var}[D] = \text{0,0289}, \qquad \sqrt{\text{Var}[D]} \approx \text{0,170}$$
+Um terceiro caso mostra o efeito da margem de negócio isoladamente. Para Assistência Encanador, com $\eta=-\text{0,080}, \text{Var}[\eta]=\text{0,015}$ (modelo bem informado), e $b=\text{0,40}$ com $n=300$ (baseline bem amostrado) — logo $\text{logit}(b)=-\text{0,405}, \text{Var}[\text{logit}(b)]=\text{0,0139}$:
 
-$$D - z\sqrt{\text{Var}[D]} = \text{0,325} - \text{1,645}\times \text{0,170} \approx \text{0,045}$$
+$$D(\text{Assistência Encanador}) = -\text{0,080} - (-\text{0,405}) = \text{0,325}, \qquad \text{Var}[D] = \text{0,0289}$$
 
-Isso já bastaria para confirmar alguma vantagem estatística sobre a referência, sem nenhuma margem de negócio — mas, subtraindo $\ln(R)$:
+$$D - z\sqrt{\text{Var}[D]} - \ln(R) \approx \text{0,045} - \text{0,405} = -\text{0,360} < 0$$
 
-$$D - z\sqrt{\text{Var}[D]} - \ln(R) \approx \text{0,045} - \text{0,405} = -\text{0,360} < 0 \quad\Rightarrow\quad \textbf{não oferta}$$
+O teste relativo recusa — a vantagem existe, mas não é grande o bastante para a margem de negócio. Como $\eta=-\text{0,080}$ corresponde a $p(i)\approx\text{0,48}$, abaixo de $P=\text{0,60}$, o teste absoluto também recusa — **não oferta**, pelos dois testes.
 
-Mesmo com significância estatística suficiente para confirmar alguma vantagem, ela não é grande o bastante para justificar a razão de chances mínima exigida pelo negócio — o teste distingue "existe alguma diferença" de "a diferença vale a pena".
+Um quarto caso mostra o piso absoluto resgatando uma oferta que o teste relativo, sozinho, recusaria. Para Conteúdo Residencial, com $\eta=\text{0,847}, \text{Var}[\eta]=\text{0,02}$ — equivalente a $p(i)\approx\text{0,70}$ —, e um baseline já alto — $b=\text{0,80}$ com $n=200$ — logo $\text{logit}(b)=\text{1,386}, \text{Var}[\text{logit}(b)]=\text{0,0313}$:
 
-$$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \lbrace \text{Desastres Naturais}, \ldots\rbrace$$
+$$D(\text{Conteúdo Residencial}) = \text{0,847} - \text{1,386} = -\text{0,539}, \qquad \text{Var}[D] = \text{0,0513}$$
+
+$$D - z\sqrt{\text{Var}[D]} - \ln(R) \approx -\text{0,539} - \text{1,645}\times\text{0,226} - \text{0,405} \approx -\text{1,316} < 0$$
+
+O teste relativo recusa — esse cliente está abaixo da média daquela cobertura específica. Mas, pelo teste absoluto:
+
+$$\eta - z\sqrt{\text{Var}[\eta]} - \text{logit}(P) \approx \text{0,847} - \text{1,645}\times\text{0,141} - \text{0,405} \approx \text{0,209} > 0 \quad\Rightarrow\quad \textbf{oferta (teste absoluto)}$$
+
+Mesmo "abaixo da média" para essa cobertura de baseline alto, a probabilidade absoluta — aproximadamente 70% — já é alta o suficiente, com confiança estatística, para justificar a oferta — o piso absoluto captura exatamente esse caso, que o teste relativo, sozinho, deixaria passar.
+
+$$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \lbrace \text{Desastres Naturais}, \text{Conteúdo Residencial}, \ldots\rbrace$$
 
 O tamanho do pacote **emerge** dessa comparação item a item — não há $k$ fixo em nenhum lugar da equação.
 
-**O que entra / o que sai:** entra: $\eta(i)$ e sua incerteza (Etapa 3), a taxa de referência com sua incerteza (Etapa 4), e $R$ (definido pela equipe), para cada opcional. Sai: $S_{ofertado}$.
+**O que entra / o que sai:** entra: $\eta(i)$ e sua incerteza (Etapa 3), a taxa de referência com sua incerteza (Etapa 4), $R$ e $P$ (definidos pela equipe), para cada opcional. Sai: $S_{ofertado}$.
 
 ---
 
@@ -470,7 +507,7 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 | $\theta$ compartilhado entre as 10 opcionais | permite generalizar entre coberturas parecidas, em vez de aprender cada uma isoladamente do zero |
 | $Z_t\sim\text{Bernoulli}(\epsilon)$ | única fonte de aleatoriedade deliberada — garante que toda cobertura continue sendo testada, mesmo as já bem avaliadas |
 | Piso de curvatura $\nu$ em $H_\theta$ | evita que itens com histórico consistentemente extremo parem de reduzir sua própria incerteza — mantém a variância encolhendo com mais dados, mesmo em regiões de alta certeza |
-| Teste de significância com margem de negócio — $D(i)$ vs. $\ln(R)$ | decide se a vantagem sobre a referência é estatisticamente confiável e grande o suficiente para o negócio, sem depender só de uma comparação pontual |
+| Dois testes combinados via "ou" — relativo, $D(i)$ vs. $\ln(R)$, e absoluto, $\eta(i)$ vs. $\text{logit}(P)$ | decide se a vantagem sobre a referência é estatisticamente confiável e grande o suficiente para o negócio, ou se a probabilidade absoluta já basta sozinha, sem depender só de uma comparação pontual |
 | Reserva $\rho$ para o baseline | garante que a comparação entre $\eta(i)$ e o baseline seja entre duas estimativas estatisticamente independentes |
 | Obrigatórias excluídas do treino | evita ruído e risco de quase-separação numérica em uma variável que nunca tem variação para aprender ($y_i=1$ sempre) — elas entram no pacote só pela Etapa 5, nunca pelo aprendizado de $\theta$ |
 | Reajuste em lote completo | necessário porque a regressão logística não tem solução fechada — não é um detalhe de implementação, é uma propriedade do modelo |
@@ -487,6 +524,7 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 | $\rho$ (fração reservada para o baseline) | Etapas 4 e 9 | Quanto do dado aleatório fica reservado só para calibrar a referência, em vez de treinar $\theta$ | Um ponto de partida razoável é 30%, ajustável conforme o volume de tráfego |
 | $z$ (nível de confiança do teste) | Etapa 5 | Quão conservadora é a exigência de significância para ofertar | 1,645 (95% de confiança, um lado) é um ponto de partida padrão |
 | $R$ (razão de chances mínima) | Etapa 5 | Quão maior a chance de aceitação precisa ser sobre a referência, além de estatisticamente significativa | 1,0 (sem margem extra) é o ponto de partida mais simples; valores entre 1,3 e 2,0 já representam exigência de negócio perceptível, sem pedir saltos de probabilidade implausíveis |
+| $P$ (piso absoluto de probabilidade) | Etapa 5 | A partir de qual probabilidade absoluta a oferta se justifica sozinha, mesmo abaixo da referência da cobertura | Deve ficar acima de 50% para preservar a leitura de "mais provável aceitar que recusar" — na prática, algo entre 60% e 75% tende a evitar tanto pisos inativos (nunca acionados) quanto pacotes grandes demais |
 | Lista de coberturas obrigatórias | Etapas 5 e 8 | Quais coberturas nunca passam pelo teste do modelo | Definida pela equipe de produto, a partir das regras contratuais do produto |
 | Dimensões semânticas de $f_i$ | Etapa 3 | Quais atributos descrevem cada cobertura | Definidas com a equipe atuarial (categoria de risco, faixa de prêmio, frequência de sinistro) |
 | Dimensões do perfil do cliente $c$ | Etapa 1 | Quais atributos do cliente entram no modelo | Definidas com a equipe de dados, a partir do que já está disponível no cadastro |

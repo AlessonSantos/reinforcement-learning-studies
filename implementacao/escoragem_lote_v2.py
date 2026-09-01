@@ -88,18 +88,21 @@ def calcular_eta_e_variancia_lote(df, colunas_cliente, colunas_cobertura, modelo
 
 
 def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_cobertura,
-                               z_critico, razao_de_chances_minima=1.0):
+                               z_critico, razao_de_chances_minima=1.0, piso_absoluto=None):
     """
     Roda o teste de significância da Etapa 5 para um lote inteiro de uma vez,
-    exigindo que a diferença entre o modelo e o baseline corresponda a pelo
-    menos uma razão de chances mínima -- não só qualquer diferença positiva.
+    combinando dois testes complementares via "ou": um teste relativo (a
+    propensão estimada é significativamente maior que a taxa de referência,
+    por uma razão de chances mínima) e um teste absoluto (a probabilidade
+    estimada já é alta o suficiente por si só, mesmo sem comparação com a
+    referência) -- qualquer um dos dois bastando para a cobertura entrar no
+    pacote.
 
-    A razão de chances mínima entra como uma margem subtraída do limite
-    inferior do intervalo de confiança de D(i), na escala log-odds
-    (ln(razao_de_chances_minima)) -- deixando D(i) e sua variância
-    inalterados. Com razao_de_chances_minima=1.0 (padrão), ln(1)=0 e o teste
-    volta a exigir só que exista alguma vantagem estatisticamente
-    significativa, sem nenhuma margem extra de negócio.
+    O teste absoluto existe para cobrir um caso de borda do teste relativo:
+    em coberturas de baseline já alto, um cliente pode estar abaixo da média
+    daquela cobertura específica e, mesmo assim, ter uma probabilidade
+    absoluta de aceitação bastante alta -- alta o suficiente para justificar
+    a oferta, independente da comparação com a população.
 
     Parâmetros
     ----------
@@ -113,21 +116,28 @@ def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_co
         Valor crítico do teste (ex.: 1,645 para 95% de confiança, um lado).
     razao_de_chances_minima : float ou dict
         A razão de chances mínima exigida entre a propensão estimada e a
-        taxa de referência para considerar a diferença relevante o
-        suficiente para ofertar. 1.0 (padrão) equivale ao teste sem margem de
-        negócio. Valores maiores que 1 exigem uma vantagem mínima mais forte
-        (ex.: 1.5 exige pelo menos 50% mais chance que a referência). Pode
-        ser um único valor (aplicado a todas as coberturas) ou um dict
-        {cobertura_id: valor}, para margens diferentes por cobertura. Quem
-        chama a função informa a razão de chances diretamente -- o logaritmo
-        é calculado internamente.
+        taxa de referência (teste relativo). 1.0 (padrão) equivale a exigir
+        só significância estatística, sem margem de negócio. Pode ser um
+        único valor ou um dict {cobertura_id: valor}.
+    piso_absoluto : float, dict ou None
+        A probabilidade mínima absoluta (teste absoluto) -- em (0, 1). Se
+        None (padrão), o teste absoluto nunca passa (comportamento
+        equivalente a não ter esse piso configurado). Pode ser um único
+        valor ou um dict {cobertura_id: valor}. Deve ficar acima de 0.5 para
+        preservar a leitura de "mais provável aceitar que recusar"; na
+        prática, algo entre 0.6 e 0.75 tende a evitar tanto um piso nunca
+        acionado quanto pacotes grandes demais.
 
     Retorna
     -------
     dict de np.ndarray, todos de tamanho N (uma posição por linha):
-        {"d", "variancia_d", "limite_inferior", "passa_no_teste", "tem_baseline"}
-        Onde não há baseline (n=0), os campos numéricos vêm como NaN e
-        "passa_no_teste" vem como False.
+        {"d", "variancia_d", "limite_inferior_relativo", "passa_teste_relativo",
+         "limite_inferior_absoluto", "passa_teste_absoluto",
+         "passa_no_teste", "tem_baseline"}
+        "passa_no_teste" é o "ou" dos dois -- o resultado final da Etapa 5.
+        Onde não há baseline (n=0), o teste relativo vem como não-passou,
+        mas o teste absoluto continua podendo passar normalmente (ele não
+        depende do baseline).
     """
     n = len(eta)
     logit_b = np.full(n, np.nan)
@@ -146,21 +156,43 @@ def testar_significancia_lote(cobertura_ids, eta, variancia_eta, baseline_por_co
     else:
         margem_log = np.log(razao_de_chances_minima)
 
+    # --- teste relativo ---
     d = eta - logit_b
     variancia_d = variancia_eta + var_logit_b
-    limite_inferior = d - z_critico * np.sqrt(variancia_d) - margem_log
-    passa_no_teste = tem_baseline & (limite_inferior > 0)
+    limite_inferior_relativo = d - z_critico * np.sqrt(variancia_d) - margem_log
+    passa_teste_relativo = tem_baseline & (limite_inferior_relativo > 0)
+
+    # --- teste absoluto ---
+    if piso_absoluto is None:
+        limite_inferior_absoluto = np.full(n, -np.inf)
+        passa_teste_absoluto = np.zeros(n, dtype=bool)
+    else:
+        if isinstance(piso_absoluto, dict):
+            logit_piso = np.array([
+                np.log(piso_absoluto.get(c, 0.999999) / (1 - piso_absoluto.get(c, 0.999999)))
+                for c in cobertura_ids
+            ])
+        else:
+            logit_piso = np.log(piso_absoluto / (1 - piso_absoluto))
+        limite_inferior_absoluto = eta - z_critico * np.sqrt(variancia_eta) - logit_piso
+        passa_teste_absoluto = limite_inferior_absoluto > 0
+
+    passa_no_teste = passa_teste_relativo | passa_teste_absoluto
 
     return {
         "d": d,
         "variancia_d": variancia_d,
-        "limite_inferior": limite_inferior,
+        "limite_inferior_relativo": limite_inferior_relativo,
+        "passa_teste_relativo": passa_teste_relativo,
+        "limite_inferior_absoluto": limite_inferior_absoluto,
+        "passa_teste_absoluto": passa_teste_absoluto,
         "passa_no_teste": passa_no_teste,
         "tem_baseline": tem_baseline,
     }
 
 
-def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id", razao_de_chances_minima=1.0):
+def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id",
+                  razao_de_chances_minima=1.0, piso_absoluto=None):
     """
     Escora um lote inteiro de observações (cliente x cobertura) de uma vez.
 
@@ -178,21 +210,32 @@ def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id", razao_d
     coluna_cobertura_id : str
         Nome da coluna com o id da cobertura em df_scoring.
     razao_de_chances_minima : float ou dict
-        A razão de chances mínima exigida pelo negócio, além da significância
-        estatística, para uma cobertura opcional entrar no pacote (ver
-        testar_significancia_lote). 1.0 (padrão) equivale ao teste sem
-        nenhuma margem de negócio adicional.
+        A razão de chances mínima exigida pelo negócio para o teste relativo
+        (ver testar_significancia_lote). 1.0 (padrão) equivale a exigir só
+        significância estatística, sem margem de negócio.
+    piso_absoluto : float, dict ou None
+        A probabilidade mínima absoluta para o teste absoluto (ver
+        testar_significancia_lote). None (padrão) desativa esse teste --
+        só o teste relativo decide.
 
     Retorna
     -------
     pd.DataFrame
         Uma cópia de df_scoring com as colunas adicionadas: eta, variancia_eta,
-        p_estimado, d, variancia_d, limite_inferior, entra_no_pacote, motivo.
+        p_estimado, d, variancia_d, limite_inferior_relativo,
+        passa_teste_relativo, limite_inferior_absoluto, passa_teste_absoluto,
+        entra_no_pacote, motivo.
     """
     df = df_scoring.reset_index(drop=True).copy()
 
-    for coluna in ["eta", "variancia_eta", "p_estimado", "d", "variancia_d", "limite_inferior"]:
+    colunas_numericas = [
+        "eta", "variancia_eta", "p_estimado", "d", "variancia_d",
+        "limite_inferior_relativo", "limite_inferior_absoluto",
+    ]
+    for coluna in colunas_numericas:
         df[coluna] = np.nan
+    df["passa_teste_relativo"] = False
+    df["passa_teste_absoluto"] = False
     df["entra_no_pacote"] = False
     df["motivo"] = ""
 
@@ -216,24 +259,39 @@ def escorar_lote(df_scoring, modelo, coluna_cobertura_id="cobertura_id", razao_d
             df_opcionais[coluna_cobertura_id].to_numpy(), eta, variancia_eta,
             modelo["baseline_por_cobertura"], modelo["z_critico"],
             razao_de_chances_minima=razao_de_chances_minima,
+            piso_absoluto=piso_absoluto,
         )
 
-        df.loc[idx_opcionais, "eta"] = eta
-        df.loc[idx_opcionais, "variancia_eta"] = variancia_eta
-        df.loc[idx_opcionais, "p_estimado"] = p_estimado
-        df.loc[idx_opcionais, "d"] = resultado_teste["d"]
-        df.loc[idx_opcionais, "variancia_d"] = resultado_teste["variancia_d"]
-        df.loc[idx_opcionais, "limite_inferior"] = resultado_teste["limite_inferior"]
-        df.loc[idx_opcionais, "entra_no_pacote"] = resultado_teste["passa_no_teste"]
+        idx_opcionais_pos = idx_opcionais
+        df.loc[idx_opcionais_pos, "eta"] = eta
+        df.loc[idx_opcionais_pos, "variancia_eta"] = variancia_eta
+        df.loc[idx_opcionais_pos, "p_estimado"] = p_estimado
+        df.loc[idx_opcionais_pos, "d"] = resultado_teste["d"]
+        df.loc[idx_opcionais_pos, "variancia_d"] = resultado_teste["variancia_d"]
+        df.loc[idx_opcionais_pos, "limite_inferior_relativo"] = resultado_teste["limite_inferior_relativo"]
+        df.loc[idx_opcionais_pos, "passa_teste_relativo"] = resultado_teste["passa_teste_relativo"]
+        df.loc[idx_opcionais_pos, "limite_inferior_absoluto"] = resultado_teste["limite_inferior_absoluto"]
+        df.loc[idx_opcionais_pos, "passa_teste_absoluto"] = resultado_teste["passa_teste_absoluto"]
+        df.loc[idx_opcionais_pos, "entra_no_pacote"] = resultado_teste["passa_no_teste"]
 
         motivo = np.where(
-            ~resultado_teste["tem_baseline"],
-            "cobertura ainda sem baseline suficiente",
-            np.where(resultado_teste["passa_no_teste"],
-                      "diferença estatisticamente significativa",
-                      "diferença não significativa"),
+            resultado_teste["passa_teste_relativo"] & resultado_teste["passa_teste_absoluto"],
+            "aprovada pelos dois testes (relativo e absoluto)",
+            np.where(
+                resultado_teste["passa_teste_relativo"],
+                "aprovada pelo teste relativo (vs. baseline)",
+                np.where(
+                    resultado_teste["passa_teste_absoluto"],
+                    "aprovada pelo teste absoluto (piso de probabilidade)",
+                    np.where(
+                        ~resultado_teste["tem_baseline"],
+                        "reprovada -- cobertura ainda sem baseline suficiente, e não atingiu o piso absoluto",
+                        "reprovada nos dois testes",
+                    ),
+                ),
+            ),
         )
-        df.loc[idx_opcionais, "motivo"] = motivo
+        df.loc[idx_opcionais_pos, "motivo"] = motivo
 
     return df
 
