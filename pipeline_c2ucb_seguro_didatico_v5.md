@@ -27,10 +27,10 @@ $$\theta \in \mathbb{R}^d, \qquad \theta \sim \mathcal N(0,\ \lambda^{-1}I), \qq
 | $\nu$ | piso mínimo de curvatura usado ao atualizar $H_\theta$ (Etapa 9) — evita que coberturas com propensão muito próxima de 0 ou 1 parem de reduzir sua própria incerteza |
 | $\epsilon$ | probabilidade de a rodada inteira ir pela rota aleatória — um valor **fixo**, definido pela equipe (ver Etapa 2) |
 | $\rho$ | fração das rodadas aleatórias reservada exclusivamente para calcular a taxa de referência de cada cobertura (ver Etapa 4) — nunca usada para treinar $\theta$ |
-| $R$ | a razão de chances mínima exigida pelo negócio para justificar uma oferta, além de existir significância estatística (ver Etapa 5) |
-| $P$ | o piso absoluto de probabilidade exigido pelo negócio — uma segunda via de justificar a oferta, independente da comparação com a referência (ver Etapa 5) |
+| $R$ | a razão de chances mínima exigida pelo negócio para justificar uma oferta, além de existir significância estatística — um único valor para todas as coberturas, ou um valor próprio por cobertura (ver Etapa 5) |
+| $P$ | o piso absoluto de probabilidade exigido pelo negócio — uma segunda via de justificar a oferta, independente da comparação com a referência — também um único valor ou um valor próprio por cobertura (ver Etapa 5) |
 
-**O que entra / o que sai:** nada entra. Sai: $\theta, H_\theta$ zerados, e os parâmetros de configuração — $\lambda, \nu, \epsilon, \rho, R$ — definidos, prontos para a Rodada 1.
+**O que entra / o que sai:** nada entra. Sai: $\theta, H_\theta$ zerados, e os parâmetros de configuração — $\lambda, \nu, \epsilon, \rho, R, P$ — definidos, prontos para a Rodada 1.
 
 ---
 
@@ -233,7 +233,7 @@ $$S_{ofertado} = \lbrace \text{4 obrigatórias}\rbrace \cup \Big\lbrace i \in \l
 
 | Símbolo | Descrição |
 |---|---|
-| $P$ | o piso absoluto de probabilidade exigido pelo negócio — entra em jogo quando o teste relativo, sozinho, recusaria uma cobertura que ainda tem propensão absoluta alta |
+| $P$ | o piso absoluto de probabilidade exigido pelo negócio — entra em jogo quando o teste relativo, sozinho, recusaria uma cobertura que ainda tem propensão absoluta alta; um único valor para todas as coberturas, ou um valor próprio por cobertura |
 
 **Por que $R$ e $P$ respondem perguntas diferentes, e por isso se combinam com "ou", não com "e".** $R$ decide se vale a pena confiar que esse cliente é melhor que a média daquela cobertura — só faz sentido comparando contra uma referência populacional. $P$ decide se a probabilidade absoluta já basta por si só, sem nenhuma comparação. A maioria das coberturas do catálogo (baseline baixo a moderado) é decidida pelo teste relativo; o piso absoluto age como rede de segurança, relevante sobretudo para as poucas coberturas de baseline já alto, onde "abaixo da média" ainda pode significar "bastante provável".
 
@@ -523,8 +523,8 @@ Etapa 9 (reajuste em lote: θ, H_θ e baseline, separadamente) ──> novo θ, 
 | $\epsilon$ (fixo, definido pela equipe) | Etapa 2 | Qual fração das rodadas continua sendo oferta aleatória, indefinidamente | Um ponto de partida razoável é algo entre 0,05 e 0,15 — precisa ser maior que zero, sem exceção |
 | $\rho$ (fração reservada para o baseline) | Etapas 4 e 9 | Quanto do dado aleatório fica reservado só para calibrar a referência, em vez de treinar $\theta$ | Um ponto de partida razoável é 30%, ajustável conforme o volume de tráfego |
 | $z$ (nível de confiança do teste) | Etapa 5 | Quão conservadora é a exigência de significância para ofertar | 1,645 (95% de confiança, um lado) é um ponto de partida padrão |
-| $R$ (razão de chances mínima) | Etapa 5 | Quão maior a chance de aceitação precisa ser sobre a referência, além de estatisticamente significativa | 1,0 (sem margem extra) é o ponto de partida mais simples; valores entre 1,3 e 2,0 já representam exigência de negócio perceptível, sem pedir saltos de probabilidade implausíveis |
-| $P$ (piso absoluto de probabilidade) | Etapa 5 | A partir de qual probabilidade absoluta a oferta se justifica sozinha, mesmo abaixo da referência da cobertura | Deve ficar acima de 50% para preservar a leitura de "mais provável aceitar que recusar" — na prática, algo entre 60% e 75% tende a evitar tanto pisos inativos (nunca acionados) quanto pacotes grandes demais |
+| $R$ (razão de chances mínima; escalar ou por cobertura) | Etapa 5 | Quão maior a chance de aceitação precisa ser sobre a referência, além de estatisticamente significativa | 1,0 (sem margem extra) é o ponto de partida mais simples; valores entre 1,3 e 2,0 já representam exigência de negócio perceptível, sem pedir saltos de probabilidade implausíveis |
+| $P$ (piso absoluto de probabilidade; escalar ou por cobertura) | Etapa 5 | A partir de qual probabilidade absoluta a oferta se justifica sozinha, mesmo abaixo da referência da cobertura | Deve ficar acima de 50% para preservar a leitura de "mais provável aceitar que recusar" — na prática, algo entre 60% e 75% tende a evitar tanto pisos inativos (nunca acionados) quanto pacotes grandes demais |
 | Lista de coberturas obrigatórias | Etapas 5 e 8 | Quais coberturas nunca passam pelo teste do modelo | Definida pela equipe de produto, a partir das regras contratuais do produto |
 | Dimensões semânticas de $f_i$ | Etapa 3 | Quais atributos descrevem cada cobertura | Definidas com a equipe atuarial (categoria de risco, faixa de prêmio, frequência de sinistro) |
 | Dimensões do perfil do cliente $c$ | Etapa 1 | Quais atributos do cliente entram no modelo | Definidas com a equipe de dados, a partir do que já está disponível no cadastro |
