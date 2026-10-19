@@ -117,7 +117,7 @@ Fixada a faixa $j$:
 
 $$t_k = IS \cdot taxa_j + A_{1j} + A_2 \quad\Longleftrightarrow\quad IS = \frac{t_k - A_{1j} - A_2}{taxa_j}$$
 
-O intervalo de IS permitido nessa faixa é a interseção da faixa com os limites da cobertura:
+O intervalo de IS permitido nessa faixa é a interseção da faixa com os limites da cobertura. No seu layout, ele já vem pronto nas colunas `ismin_` e `ismax_` da especial, linha a linha:
 
 $$[IS^{lo}_j,\; IS^{hi}_j] = [\max(IS^{min}, inf_j),\; \min(IS^{max}, sup_j)]$$
 
@@ -140,10 +140,10 @@ O conjunto viável deixa de ser um intervalo, e o problema deixa de ser convexo.
 
 São poucas faixas (cerca de 5), então:
 
-1. **Multiplicar** cada linha do pacote pelo número de faixas do seu perfil (um `merge` pelo perfil).
-2. Em cada candidato (linha × faixa), tratar a especial **como se fosse comum**, com limites $[L_{kj}, U_{kj}]$.
-3. Resolver todos os candidatos com a fórmula da seção 4.
-4. Escolher, por linha original, o melhor candidato.
+1. Ter **uma linha por faixa** de cada pacote × perfil. No seu dataframe isso já vem pronto (linhas explodidas).
+2. Em cada linha (candidato), tratar a especial **como se fosse comum**, com limites $[L_{kj}, U_{kj}]$.
+3. Resolver todas as linhas com a fórmula da seção 4.
+4. Escolher, por pacote × perfil, a melhor linha.
 
 O problema não convexo vira cerca de 5 problemas convexos simples, e o melhor deles é o **ótimo exato**.
 
@@ -224,48 +224,45 @@ Resultado: F2, com todas as coberturas no máximo e `status = sobra_nao_distribu
 ## 7. Algoritmo passo a passo
 
 ```
-para cada linha (pacote × perfil):              ← vetorizado no código
-    1. T = soma dos tickets recomendados
-    2. coberturas comuns: L = ISmin·taxa, U = ISmax·taxa
-    3. join com as faixas do perfil  → N candidatos
-    4. para cada candidato (faixa j):
-         IS_lo = max(ISmin, inf_j);  IS_hi = min(ISmax, sup_j)
-         se IS_lo > IS_hi: faixa inválida
-         L_esp = IS_lo·taxa_j + A1_j + A2;  U_esp = IS_hi·taxa_j + A1_j + A2
-         bisseção em s:  Σ clip(s·t0, L, U) = T
-         t = clip(s·t0, L, U); sobra; distorção
-    5. escolher candidato: válido > não-piso > menor |sobra| > menor distorção > desempate IS
-    6. converter: IS_comum = t / taxa;  IS_esp = (t − A1 − A2) / taxa_faixa
-    7. reportar IS, tickets, proporções inicial/final, sobra, status
+para cada linha (pacote × perfil × faixa):      ← vetorizado no código
+    1. T = soma dos t_<cob> recomendados
+    2. coberturas comuns: L = ismin·taxa,  U = ismax·taxa
+    3. especial: L = ismin·taxa + agravo_1 + agravo_2;  U = ismax·taxa + agravo_1 + agravo_2
+       se ismin > ismax: faixa inválida
+    4. bisseção em s:  Σ clip(s·t0, L, U) = T
+       t = clip(s·t0, L, U); sobra; distorção
+    5. converter: isf_comum = tf / taxa;  isf_esp = (tf − agravo_1 − agravo_2) / taxa
+para cada pacote × perfil:
+    6. escolher a linha: válida > não-piso > menor |sobra| > menor distorção > desempate IS
+    7. reportar tf_<cob>, isf_<cob>, sobra, distorção, status
 ```
 
 ---
 
 ## 8. Estrutura dos dados
 
-### `df_pacotes`: uma linha por pacote × perfil
+Um único dataframe, com **uma linha por pacote × perfil × faixa** da cobertura especial:
 
 | Coluna | Descrição |
 |---|---|
-| `perfil` (ou lista de colunas) | chave do join com as faixas |
-| `ticket_{c}` | ticket recomendado da cobertura c (NaN/0 = fora do pacote) |
-| `taxa_{c}` | taxa da cobertura comum c |
-| `is_min_{c}`, `is_max_{c}` | limites de IS de cada cobertura (incluindo a especial) |
+| colunas de perfil | identificam o perfil do cliente |
+| `ticket_total` | ticket total do pacote |
+| `proporcao_<cob>` | proporção recomendada de cada cobertura (informativa) |
+| `t_<cob>` | ticket recomendado de cada cobertura (NaN/0 = fora do pacote); é o que entra no modelo |
+| `ismin_<cob>`, `ismax_<cob>` | limites de IS. Na **especial**, variam por faixa (limites da faixa ∩ limites da cobertura); nas demais, se repetem |
+| `taxa_<cob>` | taxa. Na **especial**, a da faixa; nas demais, se repete |
+| `agravo_1` | agravo 1 da especial naquela faixa |
+| `agravo_2` | agravo 2 da especial (depende só do perfil) |
 
-A especial **não** tem coluna de taxa aqui, porque a taxa vem das faixas.
+Exemplo do pacote A (3 linhas, uma por faixa; só mudam as colunas da especial `cob_01` e o `agravo_1`):
 
-### `df_faixas`: uma linha por perfil × faixa
+| perfil | pacote | t_cob_01 | t_cob_02 | t_cob_03 | ismin_cob_01 | ismax_cob_01 | taxa_cob_01 | agravo_1 | agravo_2 | … |
+|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | A | 600 | 250 | 150 | 50.000 | 200.000 | 0,0020 | 20 | 30 | … |
+| P1 | A | 600 | 250 | 150 | 200.000 | 500.000 | 0,0015 | 40 | 30 | … |
+| P1 | A | 600 | 250 | 150 | 500.000 | 1.000.000 | 0,0012 | 60 | 30 | … |
 
-| Coluna | Descrição |
-|---|---|
-| `perfil` | chave do join |
-| `faixa` | identificador da faixa |
-| `is_inf`, `is_sup` | limites de IS da faixa |
-| `taxa` | taxa da especial nessa faixa |
-| `agravo1` | agravo 1 nessa faixa |
-| `agravo2` | agravo 2 (constante por perfil, repetido em todas as faixas) |
-
-Se seus nomes forem outros, passe `cols_faixa={"taxa": "minha_coluna_taxa", ...}`.
+Se os prefixos forem outros, passe `prefixos={"t": "...", "ismin": "...", ...}`.
 
 ---
 
@@ -274,23 +271,23 @@ Se seus nomes forem outros, passe `cols_faixa={"taxa": "minha_coluna_taxa", ...}
 ```python
 from otimizacao_is import calcular_is
 
-resultado, candidatos = calcular_is(
-    df_pacotes,
-    df_faixas,
-    coberturas=["danos_eletricos", "roubo", "vendaval", ...],  # comuns
-    especial="incendio",
-    chave_perfil="perfil",          # ou ["regiao", "tipo_imovel", ...]
-    desempate_is="menor",           # ou "maior"
+resultado = calcular_is(
+    df,
+    coberturas=["cob_01", "cob_02", "cob_03", ...],   # todas, incluindo a especial
+    especial="cob_01",
+    chave_grupo=["regiao", "tipo_imovel", "pacote"],  # identifica um pacote × perfil
+    desempate_is="menor",                             # ou "maior"
 )
 ```
 
-**`resultado`** tem uma linha por linha original, com:
-- `faixa_escolhida`, `taxa_{esp}`, `agravo1_{esp}` e `agravo2_{esp}`;
-- `ticket_final_{c}` e `is_{c}`;
-- `prop_ini_{c}` e `prop_final_{c}`, para comparar a recomendação com o resultado;
-- `T`, `fator_escala` (o $s$), `sobra`, `distorcao` e `status`.
+**`chave_grupo`** são as colunas que **não mudam** entre as linhas de faixa de um mesmo pacote × perfil, ou seja, as colunas de perfil mais o que identifica o pacote. Se não houver um id de pacote, as colunas `proporcao_<cob>` servem.
 
-**`candidatos`** tem todas as combinações linha × faixa com sobra, distorção e tickets. Serve para auditar **por que** uma faixa ganhou.
+**`resultado`** tem uma linha por pacote × perfil (a linha da faixa escolhida, com todas as colunas originais), acrescida de:
+- `tf_<cob>`: ticket final de cada cobertura;
+- `isf_<cob>`: IS final de cada cobertura;
+- `sobra`, `distorcao`, `fator_escala` (o $s$) e `status`.
+
+Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (todas as faixas) com seus `tf_`, `isf_`, sobra e distorção, para auditar **por que** uma faixa ganhou.
 
 **Valores de `status`:**
 
@@ -299,15 +296,13 @@ resultado, candidatos = calcular_is(
 | `ok` | ticket totalmente distribuído |
 | `sobra_nao_distribuida` | todos os tetos somados < T; veja a coluna `sobra` |
 | `minimos_excedem_T` | nem os mínimos cabem em T (não deveria ocorrer) |
-| `sem_faixa_valida` | nenhuma faixa intersecta [IS mín, IS máx] da especial |
-
-Desempenho: 60 mil linhas com 3 faixas (180 mil candidatos) rodam em cerca de 1,6 s.
+| `sem_faixa_valida` | em nenhuma faixa `ismin <= ismax` para a especial |
 
 ---
 
 ## 10. Premissas e pontos de atenção
 
 - **Taxa sobre a IS inteira:** a IS inteira usa a taxa da faixa em que cai, e não há cálculo progressivo.
-- **Bordas das faixas:** o código trata `is_inf` e `is_sup` como inclusivos. Se F1 termina em 200k e F2 começa em 200k, a IS de exatamente 200k é aceita nas duas, e o critério de escolha decide.
+- **Bordas das faixas:** o código trata `ismin` e `ismax` como inclusivos. Se F1 termina em 200k e F2 começa em 200k, a IS de exatamente 200k é aceita nas duas, e o critério de escolha decide.
 - **Arredondamento:** a IS sai com casas decimais. Se for preciso arredondar (por exemplo, para múltiplos de R$ 1.000), faça isso depois. O ticket recalculado mudará um pouco, e vale recalcular o prêmio a partir da IS arredondada.
 - **Métrica de distorção:** a forma $\sum (t - t^0)^2 / t^0$ é a que gera a regra "escala proporcional + travas". Outras métricas (por exemplo, desvio absoluto) mudam a solução e perdem a forma fechada.

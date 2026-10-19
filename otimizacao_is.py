@@ -1,32 +1,30 @@
 """
 Distribuição de ticket entre coberturas e cálculo da Importância Segurada (IS).
 
-Modelo (por linha = pacote x perfil):
+Layout de entrada (linhas JÁ explodidas por faixa da cobertura especial):
+
+    colunas_de_perfil..., ticket_total,
+    proporcao_<cob>..., t_<cob>...,            # t_<cob> = ticket recomendado
+    ismin_<cob>..., ismax_<cob>...,            # na especial, variam por faixa
+    taxa_<cob>...,                             # na especial, varia por faixa
+    agravo_1, agravo_2                         # agravos da especial
+
+Para as coberturas comuns, ismin/ismax/taxa apenas se repetem entre as linhas de
+faixa de um mesmo pacote x perfil.
+
+Saída: uma linha por pacote x perfil (a da faixa escolhida), com
+    tf_<cob>   ticket final de cada cobertura
+    isf_<cob>  IS final de cada cobertura
+    + sobra, distorcao, fator_escala, status
+
+Modelo (por linha = pacote x perfil x faixa):
     min  sum_i (t_i - t0_i)^2 / t0_i
     s.a. sum_i t_i = T              (T = soma dos tickets recomendados)
          L_i <= t_i <= U_i          (limites de ticket vindos de IS mín/máx)
 
-Solução (KKT):  t_i = clip(s * t0_i, L_i, U_i), com um único fator de escala s
-encontrado por bisseção.
-
-Cobertura especial: ticket = IS * taxa(faixa) + agravo1(faixa) + agravo2.
-Ela é resolvida enumerando as faixas: cada linha é multiplicada pelo número de
-faixas do seu perfil (join), cada candidato é resolvido como problema comum e,
-no fim, escolhe-se o melhor candidato por linha (menor sobra, depois menor distorção).
-
-Convenção de colunas
---------------------
-df_pacotes (uma linha por pacote x perfil):
-    - colunas de perfil (chave do join com df_faixas)
-    - para cada cobertura comum c:  ticket_{c}, taxa_{c}, is_min_{c}, is_max_{c}
-    - para a cobertura especial e:  ticket_{e}, is_min_{e}, is_max_{e}
-      (ticket_{e} já contempla IS*taxa + agravo1 + agravo2)
-    - ticket ausente (NaN) ou 0  => cobertura fora do pacote, IS = 0
-
-df_faixas (uma linha por perfil x faixa):
-    - colunas de perfil
-    - faixa, is_inf, is_sup, taxa, agravo1, agravo2
-      (nomes configuráveis em `cols_faixa`)
+Solução (KKT): t_i = clip(s * t0_i, L_i, U_i), com um único fator de escala s
+por linha, encontrado por bisseção. Depois escolhe-se a melhor faixa de cada
+pacote x perfil (menor sobra, depois menor distorção).
 """
 
 from __future__ import annotations
@@ -34,31 +32,26 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-COLS_FAIXA_PADRAO = {
-    "faixa": "faixa",
-    "is_inf": "is_inf",
-    "is_sup": "is_sup",
-    "taxa": "taxa",
-    "agravo1": "agravo1",
-    "agravo2": "agravo2",
+PREFIXOS_PADRAO = {
+    "t": "t_",          # ticket recomendado (entrada)
+    "ismin": "ismin_",
+    "ismax": "ismax_",
+    "taxa": "taxa_",
+    "tf": "tf_",        # ticket final (saída)
+    "isf": "isf_",      # IS final (saída)
 }
 
 
 # ---------------------------------------------------------------------------
-# Núcleo: resolve o problema "comum" para N linhas de uma vez (vetorizado)
+# Núcleo: resolve o problema para N linhas de uma vez (vetorizado)
 # ---------------------------------------------------------------------------
 def resolver_distribuicao(t0: np.ndarray, L: np.ndarray, U: np.ndarray, n_iter: int = 200):
     """
     t0, L, U: matrizes (n_linhas x n_coberturas). Coberturas inativas devem ter
     t0 = L = U = 0.
 
-    Retorna dict com:
-        t         tickets finais (n x k)
-        s         fator de escala (1 + lambda) por linha
-        T         ticket total por linha
-        sobra     T - sum(t)   (>0: não coube tudo; <0: mínimos excedem T)
-        distorcao sum (t - t0)^2 / t0 nas coberturas ativas
-        situacao  'ok' | 'teto' (sum U < T) | 'piso' (sum L > T)
+    Retorna dict com t (tickets finais), s (fator de escala), T, sobra,
+    distorcao e situacao ('ok' | 'teto' (soma U < T) | 'piso' (soma L > T)).
     """
     t0 = np.asarray(t0, float)
     L = np.asarray(L, float)
@@ -99,220 +92,153 @@ def resolver_distribuicao(t0: np.ndarray, L: np.ndarray, U: np.ndarray, n_iter: 
     with np.errstate(divide="ignore", invalid="ignore"):
         dist = np.where(ativo, (t - t0) ** 2 / np.where(ativo, t0, 1.0), 0.0).sum(axis=1)
 
-    return {
-        "t": t,
-        "s": s,
-        "T": T,
-        "sobra": T - t.sum(axis=1),
-        "distorcao": dist,
-        "situacao": situacao,
-    }
+    return {"t": t, "s": s, "T": T, "sobra": T - t.sum(axis=1), "distorcao": dist, "situacao": situacao}
 
 
 # ---------------------------------------------------------------------------
-# Função principal: pacotes x faixas -> IS por cobertura
+# Função principal
 # ---------------------------------------------------------------------------
 def calcular_is(
-    df_pacotes: pd.DataFrame,
-    df_faixas: pd.DataFrame,
+    df: pd.DataFrame,
     coberturas: list[str],
     especial: str,
-    chave_perfil: str | list[str] = "perfil",
-    cols_faixa: dict | None = None,
+    chave_grupo: list[str],
+    col_agravo1: str = "agravo_1",
+    col_agravo2: str = "agravo_2",
+    prefixos: dict | None = None,
+    desempate_is: str = "menor",
     tol: float = 1e-6,
     n_iter: int = 200,
-    desempate_is: str = "menor",
+    retornar_todas_faixas: bool = False,
 ):
     """
-    desempate_is: 'menor' ou 'maior'. Quando duas faixas empatam em sobra e
-        distorção (o mesmo ticket corresponde a duas IS, porque a taxa cai nas
-        faixas altas), escolhe a faixa que gera a menor (ou maior) IS da especial.
+    df            dataframe com as linhas já explodidas por faixa.
+    coberturas    TODAS as coberturas, incluindo a especial (ex.: ["cob_01", "cob_02", ...]).
+    especial      nome da cobertura com agravos (ex.: "cob_01").
+    chave_grupo   colunas que identificam um pacote x perfil (as linhas de faixa
+                  de um mesmo grupo compartilham esses valores). Ex.: colunas de
+                  perfil + colunas de proporção.
+    desempate_is  'menor' ou 'maior': se duas faixas empatam em sobra e distorção,
+                  fica a que gera a menor (ou maior) IS da especial.
+    retornar_todas_faixas  se True, devolve também o resultado de cada faixa (auditoria).
 
-    Retorna (resultado, candidatos):
-        resultado   1 linha por linha de df_pacotes, com a faixa escolhida,
-                    tickets finais, IS, proporções, sobra, distorção e status.
-        candidatos  1 linha por (linha de df_pacotes x faixa), útil para auditoria.
+    Retorna o df com uma linha por grupo (a da faixa escolhida) acrescido de
+    tf_<cob>, isf_<cob>, sobra, distorcao, fator_escala e status.
     """
-    cf = {**COLS_FAIXA_PADRAO, **(cols_faixa or {})}
-    chave = [chave_perfil] if isinstance(chave_perfil, str) else list(chave_perfil)
-    todas = list(coberturas) + [especial]
-    k = len(todas)
+    px = {**PREFIXOS_PADRAO, **(prefixos or {})}
+    k_esp = coberturas.index(especial)
 
-    base = df_pacotes.reset_index(drop=True).copy()
-    base["_id_linha"] = np.arange(len(base))
+    base = df.reset_index(drop=True).copy()
+    grupo = base.groupby(chave_grupo, dropna=False, sort=False).ngroup().to_numpy()
 
-    # --- 1) join: cada linha vira n_faixas candidatos ----------------------
-    fx = df_faixas[chave + list(cf.values())].rename(
-        columns={v: f"_fx_{k_}" for k_, v in cf.items()}
-    )
-    cand = base.merge(fx, on=chave, how="left", validate="many_to_many")
-    sem_tabela = cand["_fx_taxa"].isna()
+    # 1) Matrizes t0, L, U (linhas x coberturas)
+    def mat(prefixo):
+        return np.column_stack([base[f"{prefixo}{c}"].to_numpy(float) for c in coberturas])
 
-    # --- 2) matrizes t0, L, U ---------------------------------------------
-    t0 = np.column_stack([cand[f"ticket_{c}"].fillna(0).to_numpy(float) for c in todas])
-    t0 = np.where(t0 > 0, t0, 0.0)
-    L = np.zeros_like(t0)
-    U = np.zeros_like(t0)
+    t0 = np.nan_to_num(mat(px["t"]), nan=0.0).clip(min=0)
+    taxa, ismin, ismax = mat(px["taxa"]), mat(px["ismin"]), mat(px["ismax"])
+    agravos = base[col_agravo1].fillna(0).to_numpy(float) + base[col_agravo2].fillna(0).to_numpy(float)
+
+    L = ismin * taxa
+    U = ismax * taxa
+    L[:, k_esp] += agravos          # especial: ticket = IS*taxa + agravo_1 + agravo_2
+    U[:, k_esp] += agravos
+
+    ativo = t0 > 0
+    L = np.where(ativo, np.nan_to_num(L), 0.0)   # fora do pacote => ticket 0
+    U = np.where(ativo, np.nan_to_num(U), 0.0)
+
+    # Faixa sem intervalo de IS (ismin > ismax) é descartada
+    esp_ativa = ativo[:, k_esp]
+    faixa_valida = (ismin[:, k_esp] <= ismax[:, k_esp]) | ~esp_ativa
+    U[:, k_esp] = np.where(faixa_valida, U[:, k_esp], L[:, k_esp])
+
+    # 2) Resolve todas as linhas de uma vez
+    r = resolver_distribuicao(t0, L, U, n_iter=n_iter)
+    t = r["t"]
+
+    # 3) Ticket -> IS
+    with np.errstate(divide="ignore", invalid="ignore"):
+        is_f = np.where(ativo, t / taxa, 0.0)
+        is_f[:, k_esp] = np.where(esp_ativa, (t[:, k_esp] - agravos) / taxa[:, k_esp], 0.0)
 
     for j, c in enumerate(coberturas):
-        taxa = cand[f"taxa_{c}"].to_numpy(float)
-        L[:, j] = cand[f"is_min_{c}"].to_numpy(float) * taxa
-        U[:, j] = cand[f"is_max_{c}"].to_numpy(float) * taxa
+        base[f"{px['tf']}{c}"] = t[:, j]
+        base[f"{px['isf']}{c}"] = is_f[:, j]
+    base["sobra"] = r["sobra"]
+    base["distorcao"] = r["distorcao"]
+    base["fator_escala"] = r["s"]
 
-    # Especial: intervalo de IS = [IS mín, IS máx] ∩ [início da faixa, fim da faixa]
-    je = k - 1
-    taxa_e = cand["_fx_taxa"].to_numpy(float)
-    ag1 = cand["_fx_agravo1"].fillna(0).to_numpy(float)
-    ag2 = cand["_fx_agravo2"].fillna(0).to_numpy(float)
-    is_lo = np.maximum(cand[f"is_min_{especial}"].to_numpy(float), cand["_fx_is_inf"].to_numpy(float))
-    is_hi = np.minimum(cand[f"is_max_{especial}"].to_numpy(float), cand["_fx_is_sup"].to_numpy(float))
-    especial_ativa = t0[:, je] > 0
-    faixa_valida = (is_lo <= is_hi) & ~sem_tabela.to_numpy()
+    status = np.where(np.abs(r["sobra"]) <= tol, "ok", "sobra_nao_distribuida")
+    status = np.where(r["situacao"] == "piso", "minimos_excedem_T", status)
+    status = np.where(~faixa_valida, "faixa_invalida", status)
+    base["status"] = status
 
-    L[:, je] = np.where(faixa_valida, is_lo * taxa_e + ag1 + ag2, 0.0)
-    U[:, je] = np.where(faixa_valida, is_hi * taxa_e + ag1 + ag2, 0.0)
+    # 4) Melhor faixa por grupo:
+    #    válida > não estoura mínimos > menor |sobra| > menor distorção > desempate de IS
+    rank = pd.DataFrame({
+        "grupo": grupo,
+        "invalida": (~faixa_valida).astype(int),
+        "piso": (r["situacao"] == "piso").astype(int),
+        "sobra": np.abs(r["sobra"]).round(6),
+        "dist": r["distorcao"].round(6),
+        "is_esp": is_f[:, k_esp] * (1 if desempate_is == "menor" else -1),
+    })
+    idx = rank.sort_values(["grupo", "invalida", "piso", "sobra", "dist", "is_esp"]) \
+              .drop_duplicates("grupo").index
+    resultado = base.loc[idx].sort_index().reset_index(drop=True)
+    resultado.loc[resultado["status"] == "faixa_invalida", "status"] = "sem_faixa_valida"
 
-    # Cobertura fora do pacote: L = U = 0
-    L = np.where(t0 > 0, L, 0.0)
-    U = np.where(t0 > 0, U, 0.0)
-
-    # Faixa sem interseção com [IS mín, IS máx]: candidato descartado
-    # (se a especial não está no pacote, a faixa é irrelevante e fica "válida")
-    candidato_valido = faixa_valida | ~especial_ativa
-
-    # --- 3) resolve todos os candidatos de uma vez ------------------------
-    r = resolver_distribuicao(t0, L, U, n_iter=n_iter)
-
-    cand["_candidato_valido"] = candidato_valido
-    cand["T"] = r["T"]
-    cand["fator_escala"] = r["s"]
-    cand["sobra"] = r["sobra"]
-    cand["distorcao"] = r["distorcao"]
-    cand["situacao"] = r["situacao"]
-    for j, c in enumerate(todas):
-        cand[f"ticket_final_{c}"] = r["t"][:, j]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        cand[f"is_{especial}"] = np.where(
-            especial_ativa & faixa_valida, (r["t"][:, je] - ag1 - ag2) / taxa_e, 0.0
-        )
-
-    # --- 4) escolhe a melhor faixa por linha ------------------------------
-    # prioridade: candidato válido > não estoura mínimos > menor sobra > menor distorção
-    # > desempate pela IS da especial (o mesmo ticket pode caber em 2 faixas)
-    cand["_rk_invalido"] = (~cand["_candidato_valido"]).astype(int)
-    cand["_rk_piso"] = (cand["situacao"] == "piso").astype(int)
-    cand["_rk_sobra"] = cand["sobra"].abs().round(6)
-    cand["_rk_dist"] = cand["distorcao"].round(6)
-    sinal = 1.0 if desempate_is == "menor" else -1.0
-    cand["_rk_is"] = sinal * cand[f"is_{especial}"]
-    melhor = (
-        cand.sort_values(["_id_linha", "_rk_invalido", "_rk_piso", "_rk_sobra", "_rk_dist", "_rk_is"])
-        .drop_duplicates("_id_linha", keep="first")
-        .sort_values("_id_linha")
-        .reset_index(drop=True)
-    )
-
-    # --- 5) converte ticket -> IS -----------------------------------------
-    for c in coberturas:
-        t = melhor[f"ticket_final_{c}"]
-        melhor[f"is_{c}"] = np.where(t > 0, t / melhor[f"taxa_{c}"], 0.0)
-
-    t_e = melhor[f"ticket_final_{especial}"]
-    ativa_e = melhor[f"ticket_{especial}"].fillna(0) > 0
-    melhor[f"is_{especial}"] = np.where(
-        ativa_e,
-        (t_e - melhor["_fx_agravo1"].fillna(0) - melhor["_fx_agravo2"].fillna(0)) / melhor["_fx_taxa"],
-        0.0,
-    )
-    melhor["faixa_escolhida"] = melhor["_fx_faixa"].where(ativa_e)
-    melhor[f"taxa_{especial}"] = melhor["_fx_taxa"].where(ativa_e)
-    melhor[f"agravo1_{especial}"] = melhor["_fx_agravo1"].where(ativa_e)
-    melhor[f"agravo2_{especial}"] = melhor["_fx_agravo2"].where(ativa_e)
-
-    # --- 6) proporções e status -------------------------------------------
-    for c in todas:
-        melhor[f"prop_ini_{c}"] = melhor[f"ticket_{c}"].fillna(0) / melhor["T"]
-        melhor[f"prop_final_{c}"] = melhor[f"ticket_final_{c}"] / melhor["T"]
-
-    status = np.where(melhor["sobra"].abs() <= tol, "ok", "sobra_nao_distribuida")
-    status = np.where(melhor["situacao"] == "piso", "minimos_excedem_T", status)
-    status = np.where(~melhor["_candidato_valido"], "sem_faixa_valida", status)
-    melhor["status"] = status
-    melhor.loc[melhor["status"] == "sem_faixa_valida", f"is_{especial}"] = np.nan
-
-    # --- 7) monta saída ----------------------------------------------------
-    cols_saida = (
-        list(df_pacotes.columns)
-        + ["faixa_escolhida", f"taxa_{especial}", f"agravo1_{especial}", f"agravo2_{especial}"]
-        + ["T", "fator_escala", "sobra", "distorcao", "status"]
-        + [f"ticket_final_{c}" for c in todas]
-        + [f"is_{c}" for c in todas]
-        + [f"prop_ini_{c}" for c in todas]
-        + [f"prop_final_{c}" for c in todas]
-    )
-    resultado = melhor[cols_saida]
-
-    cols_cand = (
-        ["_id_linha"] + chave
-        + ["_fx_faixa", "_candidato_valido", "situacao", "fator_escala", "sobra", "distorcao"]
-        + [f"ticket_final_{c}" for c in todas]
-        + [f"is_{especial}"]
-    )
-    candidatos = cand[cols_cand].rename(
-        columns={"_id_linha": "id_linha", "_fx_faixa": "faixa", "_candidato_valido": "faixa_valida"}
-    )
-    return resultado, candidatos
+    if retornar_todas_faixas:
+        return resultado, base.assign(grupo=grupo)
+    return resultado
 
 
 # ---------------------------------------------------------------------------
-# Exemplo (o mesmo da explicação didática)
+# Exemplo (o mesmo da explicação didática, no layout explodido)
+# cob_01 = Incêndio (especial), cob_02 = Danos Elétricos, cob_03 = Roubo
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    pd.set_option("display.width", 200)
-    pd.set_option("display.max_columns", 50)
+    pd.set_option("display.width", 220)
+    pd.set_option("display.max_columns", 40)
 
-    coberturas = ["danos_eletricos", "roubo"]
-    especial = "incendio"
+    pacotes = [
+        # pacote, t_cob_01, t_cob_02, t_cob_03, IS máx do Incêndio, IS máx do Roubo
+        ("A", 600, 250, 150, 1_000_000, 50_000),
+        ("B", 700, np.nan, 300, 1_000_000, 50_000),   # B não tem danos elétricos
+        ("C", 600, 250, 150, 300_000, 20_000),        # C limita IS de incêndio e roubo
+    ]
+    faixas = [  # (início, fim, taxa, agravo_1)
+        (50_000, 200_000, 0.0020, 20),
+        (200_000, 500_000, 0.0015, 40),
+        (500_000, 1_000_000, 0.0012, 60),
+    ]
 
-    df_pacotes = pd.DataFrame(
-        {
-            "pacote": ["A", "B", "C"],
-            "perfil": ["P1", "P1", "P1"],
-            # ticket recomendado (proporção x T)
-            "ticket_incendio": [600, 700, 600],
-            "ticket_danos_eletricos": [250, np.nan, 250],  # B não tem danos elétricos
-            "ticket_roubo": [150, 300, 150],
-            # IS mín / máx da especial
-            "is_min_incendio": [50_000, 50_000, 50_000],
-            "is_max_incendio": [1_000_000, 1_000_000, 300_000],  # C limita IS do incêndio
-            # comuns
-            "taxa_danos_eletricos": [0.005, 0.005, 0.005],
-            "is_min_danos_eletricos": [5_000, 5_000, 5_000],
-            "is_max_danos_eletricos": [30_000, 30_000, 30_000],
-            "taxa_roubo": [0.01, 0.01, 0.01],
-            "is_min_roubo": [2_000, 2_000, 2_000],
-            "is_max_roubo": [50_000, 50_000, 20_000],
-        }
+    linhas = []
+    for pac, t1, t2, t3, ismax_inc, ismax_rou in pacotes:
+        total = np.nansum([t1, t2, t3])
+        for inicio, fim, taxa_f, ag1 in faixas:
+            linhas.append({
+                "perfil": "P1", "pacote": pac, "ticket_total": total,
+                "proporcao_cob_01": t1 / total,
+                "proporcao_cob_02": (t2 / total) if t2 == t2 else np.nan,
+                "proporcao_cob_03": t3 / total,
+                "t_cob_01": t1, "t_cob_02": t2, "t_cob_03": t3,
+                # especial: limites da faixa ∩ limites da cobertura
+                "ismin_cob_01": max(50_000, inicio), "ismax_cob_01": min(ismax_inc, fim),
+                "ismin_cob_02": 5_000, "ismax_cob_02": 30_000,
+                "ismin_cob_03": 2_000, "ismax_cob_03": ismax_rou,
+                "taxa_cob_01": taxa_f, "taxa_cob_02": 0.005, "taxa_cob_03": 0.01,
+                "agravo_1": ag1, "agravo_2": 30,
+            })
+    df = pd.DataFrame(linhas)
+
+    res = calcular_is(
+        df,
+        coberturas=["cob_01", "cob_02", "cob_03"],
+        especial="cob_01",
+        chave_grupo=["perfil", "pacote"],
     )
-
-    df_faixas = pd.DataFrame(
-        {
-            "perfil": ["P1", "P1", "P1"],
-            "faixa": ["F1", "F2", "F3"],
-            "is_inf": [50_000, 200_000, 500_000],
-            "is_sup": [200_000, 500_000, 1_000_000],
-            "taxa": [0.0020, 0.0015, 0.0012],
-            "agravo1": [20, 40, 60],
-            "agravo2": [30, 30, 30],
-        }
-    )
-
-    res, cand = calcular_is(df_pacotes, df_faixas, coberturas, especial)
-
-    print("=== Candidatos (linha x faixa) ===")
-    print(cand.round(2).to_string(index=False))
-    print("\n=== Resultado ===")
-    cols = ["pacote", "faixa_escolhida", "status", "sobra", "distorcao", "fator_escala",
-            "ticket_final_incendio", "ticket_final_danos_eletricos", "ticket_final_roubo",
-            "is_incendio", "is_danos_eletricos", "is_roubo"]
+    cols = ["pacote", "ismin_cob_01", "ismax_cob_01", "status", "sobra",
+            "tf_cob_01", "tf_cob_02", "tf_cob_03", "isf_cob_01", "isf_cob_02", "isf_cob_03"]
     print(res[cols].round(2).to_string(index=False))
