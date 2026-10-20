@@ -13,9 +13,9 @@ Para as coberturas comuns, ismin/ismax/taxa apenas se repetem entre as linhas de
 faixa de um mesmo pacote x perfil.
 
 Saída: uma linha por pacote x perfil (a da faixa escolhida), com
-    tf_<cob>   ticket final de cada cobertura
-    isf_<cob>  IS final de cada cobertura
-    + sobra, distorcao, fator_escala, status
+    tf_<cob>   ticket final de cada cobertura (pode ter decimais)
+    isf_<cob>  IS final de cada cobertura (sempre inteira, dentro de [ismin, ismax])
+    + sobra, dif_arredondamento, distorcao, fator_escala, status
 
 Modelo (por linha = pacote x perfil x faixa):
     min  sum_i (t_i - t0_i)^2 / t0_i
@@ -25,6 +25,9 @@ Modelo (por linha = pacote x perfil x faixa):
 Solução (KKT): t_i = clip(s * t0_i, L_i, U_i), com um único fator de escala s
 por linha, encontrado por bisseção. Depois escolhe-se a melhor faixa de cada
 pacote x perfil (menor sobra, depois menor distorção).
+
+IS inteira: os limites viram [ceil(ismin), floor(ismax)] antes da otimização; o
+ótimo contínuo é então arredondado (floor + ajuste guloso) sem sair desses limites.
 """
 
 from __future__ import annotations
@@ -96,6 +99,98 @@ def resolver_distribuicao(t0: np.ndarray, L: np.ndarray, U: np.ndarray, n_iter: 
 
 
 # ---------------------------------------------------------------------------
+# IS inteira
+# ---------------------------------------------------------------------------
+CASAS_LIMPEZA = 6   # casas decimais usadas para limpar ruído de ponto flutuante
+
+
+def limites_inteiros(ismin: np.ndarray, ismax: np.ndarray):
+    """
+    Limites de IS válidos em números inteiros: [ceil(ismin), floor(ismax)].
+    Antes de ceil/floor, arredonda para CASAS_LIMPEZA casas, para que ruídos como
+    75000.0000000001 não virem 75001 (nem 74999.9999999 vire 74999).
+    """
+    lo = np.ceil(np.round(ismin, CASAS_LIMPEZA))
+    hi = np.floor(np.round(ismax, CASAS_LIMPEZA))
+    return lo, hi
+
+
+ULPS_TOLERANCIA = 64   # tolerância = 64 unidades da última casa binária do teto (~1e-11 p/ R$ 1.000)
+
+
+def tickets(is_int, taxa0, fixo0, casas_ticket=None):
+    """Tickets finais por cobertura, exatamente como saem nas colunas tf_."""
+    t = is_int * taxa0 + fixo0
+    return np.round(t, casas_ticket) if casas_ticket is not None else t
+
+
+def passa_do_teto(soma, teto):
+    """
+    True se a soma passa do teto. Empatar com o teto é permitido. A única folga
+    aceita é o ruído de representação binária do float (ULPS_TOLERANCIA unidades
+    da última casa, cerca de 1e-11 para um teto de R$ 1.000): assim
+    1000.0000000000002 conta como 1000, mas qualquer excesso real é bloqueado.
+    """
+    return soma > teto + ULPS_TOLERANCIA * np.spacing(np.abs(teto))
+
+
+def arredondar_is(is_cont, lo, hi, taxa, fixo, ativo, alvo, teto, casas_ticket=None):
+    """
+    Converte a IS contínua (ótimo do modelo) em IS inteira, linha a linha,
+    com a garantia de que a soma dos tickets finais NUNCA passa do teto.
+
+    is_cont, lo, hi, taxa, fixo, ativo: matrizes (linhas x coberturas)
+        ticket_i = IS_i * taxa_i + fixo_i   (fixo = agravos na especial, 0 nas demais)
+    alvo: soma de tickets que o ótimo contínuo distribuiu (por linha)
+    teto: ticket total máximo permitido (por linha)
+    casas_ticket: se informado, os tickets são arredondados nessas casas e a
+        garantia vale para os tickets já arredondados.
+
+    1) começa com floor(IS), sempre dentro de [lo, hi];
+    2) percorre as coberturas da maior para a menor parte fracionária e sobe a
+       IS em +1 quando isso aproxima a soma do alvo, sem passar de hi e sem a
+       soma passar do teto;
+    3) trava final: recalcula a soma exatamente como as colunas tf_ e, se alguma
+       linha passar do teto, desce 1 unidade de IS da cobertura de maior taxa
+       que ainda pode descer, até caber.
+    """
+    x = np.round(np.where(ativo, is_cont, 0.0), CASAS_LIMPEZA)
+    base = np.where(ativo, np.clip(np.floor(x), lo, hi), 0.0)
+    frac = np.where(ativo, x - base, -1.0)
+
+    taxa0 = np.where(ativo, np.nan_to_num(taxa), 0.0)
+    fixo0 = np.where(ativo, fixo, 0.0)
+
+    def soma(b):
+        return tickets(b, taxa0, fixo0, casas_ticket).sum(axis=1)
+
+    linhas = np.arange(x.shape[0])
+    ordem = np.argsort(-frac, axis=1)
+    s_atual = soma(base)
+    for pos in range(x.shape[1]):
+        i = ordem[:, pos]
+        pode = ativo[linhas, i] & (base[linhas, i] + 1 <= hi[linhas, i]) & (taxa0[linhas, i] > 0)
+        teste = base.copy()
+        teste[linhas[pode], i[pode]] += 1
+        s_teste = soma(teste)
+        melhora = np.abs(alvo - s_teste) < np.abs(alvo - s_atual) - 1e-12
+        sobe = pode & melhora & ~passa_do_teto(s_teste, teto)
+        base[linhas[sobe], i[sobe]] += 1
+        s_atual = np.where(sobe, s_teste, s_atual)
+
+    # Trava final, com a soma recalculada do zero
+    for _ in range(10 * x.shape[1]):
+        pode_descer = ativo & (base - 1 >= lo) & (taxa0 > 0)
+        excede = passa_do_teto(soma(base), teto) & pode_descer.any(axis=1)
+        if not excede.any():
+            break
+        i = np.argmax(np.where(pode_descer, taxa0, -np.inf), axis=1)
+        base[linhas[excede], i[excede]] -= 1
+
+    return base
+
+
+# ---------------------------------------------------------------------------
 # Função principal
 # ---------------------------------------------------------------------------
 def calcular_is(
@@ -107,6 +202,8 @@ def calcular_is(
     col_agravo2: str = "agravo_2",
     prefixos: dict | None = None,
     desempate_is: str = "menor",
+    col_ticket_total: str | None = "ticket_total",
+    casas_ticket: int | None = None,
     tol: float = 1e-6,
     n_iter: int = 200,
     retornar_todas_faixas: bool = False,
@@ -120,10 +217,16 @@ def calcular_is(
                   perfil + colunas de proporção.
     desempate_is  'menor' ou 'maior': se duas faixas empatam em sobra e distorção,
                   fica a que gera a menor (ou maior) IS da especial.
+    col_ticket_total  coluna com o ticket total do pacote. A soma dos tf_ nunca
+                  passa de min(ticket_total, soma dos t_<cob>). Use None para
+                  usar só a soma dos t_<cob>.
+    casas_ticket  se informado (ex.: 2), os tf_ saem arredondados nessas casas e a
+                  garantia de não passar do ticket total vale já com esse arredondamento.
     retornar_todas_faixas  se True, devolve também o resultado de cada faixa (auditoria).
 
     Retorna o df com uma linha por grupo (a da faixa escolhida) acrescido de
-    tf_<cob>, isf_<cob>, sobra, distorcao, fator_escala e status.
+    tf_<cob> (ticket final, pode ter decimais), isf_<cob> (IS final, inteira),
+    sobra, dif_arredondamento, distorcao, fator_escala e status.
     """
     px = {**PREFIXOS_PADRAO, **(prefixos or {})}
     k_esp = coberturas.index(especial)
@@ -131,58 +234,78 @@ def calcular_is(
     base = df.reset_index(drop=True).copy()
     grupo = base.groupby(chave_grupo, dropna=False, sort=False).ngroup().to_numpy()
 
-    # 1) Matrizes t0, L, U (linhas x coberturas)
+    # 1) Matrizes (linhas x coberturas)
     def mat(prefixo):
         return np.column_stack([base[f"{prefixo}{c}"].to_numpy(float) for c in coberturas])
 
     t0 = np.nan_to_num(mat(px["t"]), nan=0.0).clip(min=0)
     taxa, ismin, ismax = mat(px["taxa"]), mat(px["ismin"]), mat(px["ismax"])
     agravos = base[col_agravo1].fillna(0).to_numpy(float) + base[col_agravo2].fillna(0).to_numpy(float)
-
-    L = ismin * taxa
-    U = ismax * taxa
-    L[:, k_esp] += agravos          # especial: ticket = IS*taxa + agravo_1 + agravo_2
-    U[:, k_esp] += agravos
-
     ativo = t0 > 0
-    L = np.where(ativo, np.nan_to_num(L), 0.0)   # fora do pacote => ticket 0
-    U = np.where(ativo, np.nan_to_num(U), 0.0)
-
-    # Faixa sem intervalo de IS (ismin > ismax) é descartada
     esp_ativa = ativo[:, k_esp]
-    faixa_valida = (ismin[:, k_esp] <= ismax[:, k_esp]) | ~esp_ativa
+
+    # Parte fixa do ticket: agravos na especial, 0 nas demais
+    fixo = np.zeros_like(t0)
+    fixo[:, k_esp] = agravos
+
+    # 2) Limites de IS já em inteiros e convertidos em limites de ticket
+    #    (assim o ótimo contínuo nunca sai do intervalo de IS inteiras válidas)
+    lo, hi = limites_inteiros(ismin, ismax)
+    L = np.where(ativo, np.nan_to_num(lo * taxa + fixo), 0.0)
+    U = np.where(ativo, np.nan_to_num(hi * taxa + fixo), 0.0)
+
+    # Faixa sem nenhuma IS inteira possível (ceil(ismin) > floor(ismax)) é descartada
+    faixa_valida = (lo[:, k_esp] <= hi[:, k_esp]) | ~esp_ativa
     U[:, k_esp] = np.where(faixa_valida, U[:, k_esp], L[:, k_esp])
 
-    # 2) Resolve todas as linhas de uma vez
+    # 3) Ótimo contínuo (bisseção)
     r = resolver_distribuicao(t0, L, U, n_iter=n_iter)
-    t = r["t"]
+    t_cont = r["t"]
 
-    # 3) Ticket -> IS
+    # 4) Ticket contínuo -> IS contínua -> IS inteira -> ticket final
     with np.errstate(divide="ignore", invalid="ignore"):
-        is_f = np.where(ativo, t / taxa, 0.0)
-        is_f[:, k_esp] = np.where(esp_ativa, (t[:, k_esp] - agravos) / taxa[:, k_esp], 0.0)
+        is_cont = np.where(ativo, (t_cont - fixo) / taxa, 0.0)
+    teto = t0.sum(axis=1)
+    if col_ticket_total and col_ticket_total in base.columns:
+        teto = np.fmin(teto, base[col_ticket_total].to_numpy(float))
+    is_int = arredondar_is(is_cont, lo, hi, taxa, fixo, ativo,
+                           alvo=np.minimum(t_cont.sum(axis=1), teto), teto=teto,
+                           casas_ticket=casas_ticket)
+    t_fin = np.where(ativo, tickets(is_int, np.nan_to_num(taxa), fixo, casas_ticket), 0.0)
 
     for j, c in enumerate(coberturas):
-        base[f"{px['tf']}{c}"] = t[:, j]
-        base[f"{px['isf']}{c}"] = is_f[:, j]
-    base["sobra"] = r["sobra"]
-    base["distorcao"] = r["distorcao"]
+        base[f"{px['tf']}{c}"] = t_fin[:, j]
+        base[f"{px['isf']}{c}"] = is_int[:, j].astype("int64")
+
+    base["sobra"] = r["sobra"]                                   # o que não coube pelos limites
+    base["dif_arredondamento"] = t_cont.sum(axis=1) - t_fin.sum(axis=1)   # efeito da IS inteira
+    with np.errstate(divide="ignore", invalid="ignore"):
+        base["distorcao"] = np.where(ativo, (t_fin - t0) ** 2 / np.where(ativo, t0, 1.0), 0.0).sum(axis=1)
     base["fator_escala"] = r["s"]
 
+    # Checagem de segurança: IS inteira dentro de [ismin, ismax] originais
+    fora = ativo & ((is_int < np.round(ismin, CASAS_LIMPEZA)) | (is_int > np.round(ismax, CASAS_LIMPEZA)))
+    fora_limites = fora.any(axis=1) & faixa_valida
+    # Checagem de segurança: soma dos tickets finais acima do teto
+    # (só é possível se nem as IS mínimas cabem no ticket total)
+    acima_teto = passa_do_teto(t_fin.sum(axis=1), teto)
+
     status = np.where(np.abs(r["sobra"]) <= tol, "ok", "sobra_nao_distribuida")
-    status = np.where(r["situacao"] == "piso", "minimos_excedem_T", status)
+    status = np.where((r["situacao"] == "piso") | acima_teto, "minimos_excedem_T", status)
+    status = np.where(fora_limites, "is_fora_dos_limites", status)
     status = np.where(~faixa_valida, "faixa_invalida", status)
     base["status"] = status
 
-    # 4) Melhor faixa por grupo:
+    # 5) Melhor faixa por grupo:
     #    válida > não estoura mínimos > menor |sobra| > menor distorção > desempate de IS
+    #    (sobra e distorção do ótimo contínuo, para o arredondamento não decidir a faixa)
     rank = pd.DataFrame({
         "grupo": grupo,
         "invalida": (~faixa_valida).astype(int),
-        "piso": (r["situacao"] == "piso").astype(int),
+        "piso": ((r["situacao"] == "piso") | acima_teto).astype(int),
         "sobra": np.abs(r["sobra"]).round(6),
         "dist": r["distorcao"].round(6),
-        "is_esp": is_f[:, k_esp] * (1 if desempate_is == "menor" else -1),
+        "is_esp": is_int[:, k_esp] * (1 if desempate_is == "menor" else -1),
     })
     idx = rank.sort_values(["grupo", "invalida", "piso", "sobra", "dist", "is_esp"]) \
               .drop_duplicates("grupo").index
@@ -208,10 +331,10 @@ if __name__ == "__main__":
         ("B", 700, np.nan, 300, 1_000_000, 50_000),   # B não tem danos elétricos
         ("C", 600, 250, 150, 300_000, 20_000),        # C limita IS de incêndio e roubo
     ]
-    faixas = [  # (início, fim, taxa, agravo_1)
+    faixas = [  # (início, fim, taxa, agravo_1) — faixas inteiras, sem sobreposição
         (50_000, 200_000, 0.0020, 20),
-        (200_000, 500_000, 0.0015, 40),
-        (500_000, 1_000_000, 0.0012, 60),
+        (200_001, 500_000, 0.0015, 40),
+        (500_001, 1_000_000, 0.0012, 60),
     ]
 
     linhas = []
@@ -239,6 +362,6 @@ if __name__ == "__main__":
         especial="cob_01",
         chave_grupo=["perfil", "pacote"],
     )
-    cols = ["pacote", "ismin_cob_01", "ismax_cob_01", "status", "sobra",
+    cols = ["pacote", "ismin_cob_01", "ismax_cob_01", "status", "sobra", "dif_arredondamento",
             "tf_cob_01", "tf_cob_02", "tf_cob_03", "isf_cob_01", "isf_cob_02", "isf_cob_03"]
     print(res[cols].round(2).to_string(index=False))

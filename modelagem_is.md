@@ -175,10 +175,12 @@ Usamos o perfil P1 com as coberturas Incêndio (especial), Danos Elétricos (DE)
 | Faixa | IS | Taxa | $A_1$ | Ticket possível |
 |---|---|---|---|---|
 | F1 | 50k – 200k | 0,20% | 20 | 150 – 450 |
-| F2 | 200k – 500k | 0,15% | 40 | 370 – 820 |
-| F3 | 500k – 1M | 0,12% | 60 | 690 – 1.290 |
+| F2 | 200.001 – 500k | 0,15% | 40 | ≈370 – 820 |
+| F3 | 500.001 – 1M | 0,12% | 60 | ≈690 – 1.290 |
 
-Repare na sobreposição: o ticket 700, por exemplo, cabe em F2 e em F3.
+Como a IS é inteira, as faixas não se encostam: F1 vai até 200.000 e F2 começa em 200.001.
+
+Repare na sobreposição **de ticket**: o ticket 700, por exemplo, cabe em F2 e em F3.
 
 ### 6.1 Pacote A: redistribuição clássica
 
@@ -195,7 +197,7 @@ DE queria 250, mas o máximo é 150. Fica travado em 150, e sobram 100 para redi
 Em F2, Incêndio e Roubo foram escalados pelo mesmo fator: $s = 850/750 \approx 1{,}133$. A proporção entre eles, 600:150 = 680:170 = 4:1, ficou **intacta**.
 
 **IS finais:**
-- **Incêndio:** $(680 - 40 - 30)/0{,}0015 \approx$ **R$ 406.667** (cai de fato em F2 ✔)
+- **Incêndio:** $(680 - 40 - 30)/0{,}0015 = 406.666{,}67$, que vira **R$ 406.666** (cai de fato em F2 ✔). Arredondar para 406.667 daria ticket de 680,0005, e o total passaria de 1.000 (seção 7.3). O ticket final é recalculado a partir da IS inteira: $406.666 \times 0{,}0015 + 70 = 679{,}999$.
 - **Danos Elétricos:** $150/0{,}005 =$ **R$ 30.000**
 - **Roubo:** $170/0{,}01 =$ **R$ 17.000**
 
@@ -221,25 +223,89 @@ Resultado: F2, com todas as coberturas no máximo e `status = sobra_nao_distribu
 
 ---
 
-## 7. Algoritmo passo a passo
+## 7. IS inteira e precisão numérica
+
+A IS do cliente precisa ser um **número inteiro** (não existe IS de R$ 500.000,50). O **ticket** pode ter decimais. Como as faixas também são inteiras (por exemplo, F1 de 0 a 75.000 e F2 a partir de 75.001), não existe IS entre uma faixa e outra.
+
+### 7.1 Por que não arredondar "de qualquer jeito"
+
+Tratar a IS como variável inteira dentro da otimização transformaria o problema num problema inteiro, bem mais pesado. Também não é necessário, porque o efeito de mudar a IS em R$ 1 sobre o ticket é minúsculo: é a própria taxa, de alguns décimos de centavo.
+
+Então o código faz em três etapas:
+
+**1. Limites inteiros antes de otimizar.** Os limites de IS de cada cobertura viram
+
+$$IS^{min}_{int} = \lceil IS^{min} \rceil \qquad IS^{max}_{int} = \lfloor IS^{max} \rfloor$$
+
+e só então são convertidos em limites de ticket. Uma IS mínima de 1.000,40, por exemplo, vira 1.001, porque 1.000 ficaria abaixo do mínimo. Se uma faixa não tem nenhum inteiro possível ($\lceil IS^{min} \rceil > \lfloor IS^{max} \rfloor$), ela é descartada.
+
+**2. Otimização contínua, como antes.** A bisseção encontra o ótimo com IS contínuas, que já ficam dentro dos limites inteiros.
+
+**3. Arredondamento controlado**, em cada linha:
+- todas as IS começam em $\lfloor IS \rfloor$, o que nunca fica abaixo do mínimo inteiro;
+- percorrendo as coberturas da maior para a menor parte fracionária, a IS sobe 1 unidade quando isso **aproxima** a soma dos tickets do ótimo contínuo, **não passa** do máximo inteiro e **não faz o ticket total ser ultrapassado**;
+- o ticket final é **recalculado** a partir da IS inteira: $tf = IS \cdot taxa\ (+\ agravo_1 + agravo_2)$.
+
+Com isso, ticket e IS sempre batem entre si, e a diferença em relação ao ótimo contínuo é de centavos (no teste com 60 mil pacotes, no máximo R$ 0,02).
+
+### 7.2 Cuidados com ponto flutuante
+
+O computador representa decimais de forma aproximada: um limite que deveria ser 75.000 pode chegar como 75.000,0000000001. Um $\lceil \cdot \rceil$ ingênuo transformaria isso em 75.001 e cortaria uma IS válida. Por isso, antes de qualquer $\lceil \cdot \rceil$ ou $\lfloor \cdot \rfloor$, os valores são arredondados para 6 casas decimais, o que remove esse ruído.
+
+Além disso, o código faz uma **checagem final**: se alguma IS inteira ficar fora de [IS mín, IS máx], a linha recebe `status = is_fora_dos_limites`. Isso não deve acontecer; a checagem existe como rede de segurança.
+
+### 7.3 O ticket total nunca é ultrapassado
+
+Regra obrigatória: a soma dos tickets finais **nunca passa** do ticket total do pacote. O teto de cada linha é
+
+$$teto = \min(ticket\_total,\; \textstyle\sum t_{cob})$$
+
+Assim, se a coluna `ticket_total` vier um pouco menor que a soma dos `t_<cob>`, prevalece o menor dos dois.
+
+A garantia tem duas camadas:
+
+1. **No ajuste guloso:** a IS só sobe 1 unidade se a nova soma de tickets continuar dentro do teto.
+2. **Trava final:** a soma é recalculada do zero, exatamente como as colunas `tf_` são geradas. Se alguma linha ainda passar do teto, desce 1 unidade de IS da cobertura de maior taxa que ainda pode descer (sem ficar abaixo do mínimo), até caber.
+
+**Empatar com o teto é permitido.** No pacote B, 700 + 300 = 1.000 exatos. A única folga aceita na comparação é o ruído de representação binária do computador (cerca de 0,00000000001 num ticket de R$ 1.000). Assim, 1000,0000000000002 conta como 1.000, mas qualquer excesso real é bloqueado.
+
+**Tickets em centavos:** com `casas_ticket=2`, os `tf_` saem arredondados em centavos e a garantia vale já com esse arredondamento. Isso importa porque arredondar os tickets *depois* da função, por conta própria, poderia fazer a soma passar do total em 1 centavo.
+
+**Quanto se perde:** o preço da trava é deixar alguns centavos sem distribuir. No teste com 60 mil pacotes, foram no máximo R$ 0,02 por pacote.
+
+| Coluna | Significado |
+|---|---|
+| `sobra` | ticket que não coube por causa dos limites de IS (vem do ótimo contínuo) |
+| `dif_arredondamento` | ótimo contínuo − soma dos tickets finais (efeito da IS inteira; centavos, nunca negativo quando o ótimo contínuo usa o total inteiro) |
+
+O único caso em que o total não pode ser respeitado é quando **nem as IS mínimas cabem nele**. Pela sua regra de negócio isso não ocorre, mas, se ocorrer, a linha recebe `status = minimos_excedem_T`.
+
+A escolha da faixa usa a sobra e a distorção do ótimo contínuo, para que o arredondamento (centavos) não decida a faixa.
+
+---
+
+## 8. Algoritmo passo a passo
 
 ```
 para cada linha (pacote × perfil × faixa):      ← vetorizado no código
     1. T = soma dos t_<cob> recomendados
     2. coberturas comuns: L = ismin·taxa,  U = ismax·taxa
     3. especial: L = ismin·taxa + agravo_1 + agravo_2;  U = ismax·taxa + agravo_1 + agravo_2
-       se ismin > ismax: faixa inválida
+       se ceil(ismin) > floor(ismax): faixa inválida
     4. bisseção em s:  Σ clip(s·t0, L, U) = T
        t = clip(s·t0, L, U); sobra; distorção
-    5. converter: isf_comum = tf / taxa;  isf_esp = (tf − agravo_1 − agravo_2) / taxa
+    (antes de tudo: limites inteiros  ismin → ceil(ismin),  ismax → floor(ismax))
+    5. converter: IS_comum = t / taxa;  IS_esp = (t − agravo_1 − agravo_2) / taxa
+    6. IS inteira: floor + ajuste guloso (+1) sem sair de [ceil(ismin), floor(ismax)]
+       tf = IS_inteira · taxa (+ agravos na especial)
 para cada pacote × perfil:
-    6. escolher a linha: válida > não-piso > menor |sobra| > menor distorção > desempate IS
-    7. reportar tf_<cob>, isf_<cob>, sobra, distorção, status
+    7. escolher a linha: válida > não-piso > menor |sobra| > menor distorção > desempate IS
+    8. reportar tf_<cob>, isf_<cob>, sobra, dif_arredondamento, distorção, status
 ```
 
 ---
 
-## 8. Estrutura dos dados
+## 9. Estrutura dos dados
 
 Um único dataframe, com **uma linha por pacote × perfil × faixa** da cobertura especial:
 
@@ -259,14 +325,14 @@ Exemplo do pacote A (3 linhas, uma por faixa; só mudam as colunas da especial `
 | perfil | pacote | t_cob_01 | t_cob_02 | t_cob_03 | ismin_cob_01 | ismax_cob_01 | taxa_cob_01 | agravo_1 | agravo_2 | … |
 |---|---|---|---|---|---|---|---|---|---|---|
 | P1 | A | 600 | 250 | 150 | 50.000 | 200.000 | 0,0020 | 20 | 30 | … |
-| P1 | A | 600 | 250 | 150 | 200.000 | 500.000 | 0,0015 | 40 | 30 | … |
-| P1 | A | 600 | 250 | 150 | 500.000 | 1.000.000 | 0,0012 | 60 | 30 | … |
+| P1 | A | 600 | 250 | 150 | 200.001 | 500.000 | 0,0015 | 40 | 30 | … |
+| P1 | A | 600 | 250 | 150 | 500.001 | 1.000.000 | 0,0012 | 60 | 30 | … |
 
 Se os prefixos forem outros, passe `prefixos={"t": "...", "ismin": "...", ...}`.
 
 ---
 
-## 9. Como usar o código
+## 10. Como usar o código
 
 ```python
 from otimizacao_is import calcular_is
@@ -277,15 +343,17 @@ resultado = calcular_is(
     especial="cob_01",
     chave_grupo=["regiao", "tipo_imovel", "pacote"],  # identifica um pacote × perfil
     desempate_is="menor",                             # ou "maior"
+    col_ticket_total="ticket_total",                  # teto: min(ticket_total, soma dos t_)
+    casas_ticket=None,                                # ex.: 2 para tickets em centavos
 )
 ```
 
 **`chave_grupo`** são as colunas que **não mudam** entre as linhas de faixa de um mesmo pacote × perfil, ou seja, as colunas de perfil mais o que identifica o pacote. Se não houver um id de pacote, as colunas `proporcao_<cob>` servem.
 
 **`resultado`** tem uma linha por pacote × perfil (a linha da faixa escolhida, com todas as colunas originais), acrescida de:
-- `tf_<cob>`: ticket final de cada cobertura;
-- `isf_<cob>`: IS final de cada cobertura;
-- `sobra`, `distorcao`, `fator_escala` (o $s$) e `status`.
+- `tf_<cob>`: ticket final de cada cobertura (pode ter decimais, recalculado a partir da IS inteira);
+- `isf_<cob>`: IS final de cada cobertura (**inteira**, dentro de [IS mín, IS máx]);
+- `sobra`, `dif_arredondamento`, `distorcao`, `fator_escala` (o $s$) e `status`.
 
 Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (todas as faixas) com seus `tf_`, `isf_`, sobra e distorção, para auditar **por que** uma faixa ganhou.
 
@@ -295,14 +363,15 @@ Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (to
 |---|---|
 | `ok` | ticket totalmente distribuído |
 | `sobra_nao_distribuida` | todos os tetos somados < T; veja a coluna `sobra` |
-| `minimos_excedem_T` | nem os mínimos cabem em T (não deveria ocorrer) |
-| `sem_faixa_valida` | em nenhuma faixa `ismin <= ismax` para a especial |
+| `minimos_excedem_T` | nem as IS mínimas cabem no ticket total (não deveria ocorrer) |
+| `sem_faixa_valida` | em nenhuma faixa existe IS inteira entre `ismin` e `ismax` da especial |
+| `is_fora_dos_limites` | rede de segurança: alguma IS inteira saiu de [IS mín, IS máx] (não deve ocorrer) |
 
 ---
 
-## 10. Premissas e pontos de atenção
+## 11. Premissas e pontos de atenção
 
 - **Taxa sobre a IS inteira:** a IS inteira usa a taxa da faixa em que cai, e não há cálculo progressivo.
-- **Bordas das faixas:** o código trata `ismin` e `ismax` como inclusivos. Se F1 termina em 200k e F2 começa em 200k, a IS de exatamente 200k é aceita nas duas, e o critério de escolha decide.
-- **Arredondamento:** a IS sai com casas decimais. Se for preciso arredondar (por exemplo, para múltiplos de R$ 1.000), faça isso depois. O ticket recalculado mudará um pouco, e vale recalcular o prêmio a partir da IS arredondada.
+- **Bordas das faixas:** `ismin` e `ismax` são inclusivos e inteiros: F1 até 75.000 e F2 a partir de 75.001. Se as faixas da sua base vierem encostadas (F1 até 75.000 e F2 a partir de 75.000), a IS de exatamente 75.000 é aceita nas duas, e o critério de escolha decide.
+- **Arredondamento:** a IS sai inteira (seção 7). Se no futuro for preciso arredondar para múltiplos maiores (por exemplo, R$ 1.000), a mesma lógica vale trocando 1 pelo passo desejado no ceil/floor e no ajuste.
 - **Métrica de distorção:** a forma $\sum (t - t^0)^2 / t^0$ é a que gera a regra "escala proporcional + travas". Outras métricas (por exemplo, desvio absoluto) mudam a solução e perdem a forma fechada.
