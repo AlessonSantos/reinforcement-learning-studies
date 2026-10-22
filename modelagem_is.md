@@ -161,7 +161,9 @@ O critério 5 existe por causa da sobreposição descrita na seção 5.3: duas f
 
 Algumas coberturas têm ticket dado por um **valor fixo** (que só varia por perfil, como o agravo 2) mais uma parte proporcional à IS:
 
-$$t = valor\_fixo + \frac{IS \cdot taxa}{100}$$
+$$t = valor\_fixo + IS \cdot taxa$$
+
+com a taxa já dividida por 100 no pré-processamento, como nas demais coberturas.
 
 É a mesma estrutura da especial (parte fixa + IS × taxa), só que sem faixas. Como as demais, essas coberturas têm um **ticket recomendado** (`<cob>_t`, proporção × ticket total), que não precisa ser igual ao valor fixo.
 
@@ -178,7 +180,7 @@ Exemplo (pacote A, valor fixo de R$ 50):
 | 80 (sobram 30) | 704 | 176 | 50 | 1.080 |
 | 20 (faltam 30) | 656 | 164 | 50 | 1.020 |
 
-**Com taxa (se for incorporada no futuro).** Basta criar a coluna `<cob>_taxa`. O ticket da cobertura passa a variar entre $valor\_fixo + IS^{min} \cdot taxa/100$ e $valor\_fixo + IS^{max} \cdot taxa/100$, e a IS volta a ser calculada por $IS = (t - valor\_fixo) \cdot 100 / taxa$, inteira e dentro dos limites.
+**Com taxa (se for incorporada no futuro).** Basta criar a coluna `<cob>_taxa`. O ticket da cobertura passa a variar entre $valor\_fixo + IS^{min} \cdot taxa$ e $valor\_fixo + IS^{max} \cdot taxa$, e a IS volta a ser calculada por $IS = (t - valor\_fixo) / taxa$, inteira e dentro dos limites.
 
 **Fora do pacote:** ticket recomendado e valor fixo zerados. A cobertura fica com IS 0 e ticket 0.
 
@@ -379,7 +381,7 @@ resultado = calcular_is(
     col_ticket_total="ticket_total",                  # teto: min(ticket_total, soma dos <cob>_t)
     casas_ticket=None,                                # ex.: 2 para tickets em centavos
     coberturas_valor_fixo={                           # seção 5.6
-        "cob_04": {"valor": "cob_04_valor", "escala_taxa": 100},
+        "cob_04": {"valor": "cob_04_valor"},
     },
 )
 ```
@@ -407,6 +409,7 @@ Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (to
 
 ## 11. Premissas e pontos de atenção
 
+- **Taxas já divididas por 100:** todas as colunas `<cob>_taxa` devem chegar já divididas por 100 (ex.: 0,0015), e o ticket é sempre $IS \cdot taxa$, mais a parte fixa quando houver.
 - **Coberturas fora do pacote ou não elegíveis:**
   - *Fora do pacote:* `<cob>_t` = 0 (com `ismin`/`ismax` zerados). A cobertura sai do problema, com IS 0 e ticket 0.
   - *Não elegível ao perfil:* `<cob>_taxa` = 0. A IS e o ticket ficam em 0 mesmo que o pacote recomende um ticket para ela, e esse ticket é redistribuído para as demais coberturas. Na especial, os agravos também não são cobrados.

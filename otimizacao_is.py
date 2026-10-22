@@ -230,9 +230,9 @@ def calcular_is(
                   usar só a soma dos <cob>_t.
     casas_ticket  se informado (ex.: 2), os <cob>_tf saem arredondados nessas casas e a
                   garantia de não passar do ticket total vale já com esse arredondamento.
-    coberturas_valor_fixo  coberturas cujo ticket é  valor_fixo + IS * taxa / escala_taxa.
-                  Dicionário {cobertura: {"valor": coluna_do_valor_fixo,
-                                          "escala_taxa": 100}}   (escala padrão: 100).
+    coberturas_valor_fixo  coberturas cujo ticket é  valor_fixo + IS * taxa.
+                  Dicionário {cobertura: {"valor": coluna_do_valor_fixo}}.
+                  A taxa já vem dividida por 100, como nas demais coberturas.
                   - A coluna de taxa (<cob>_taxa) é opcional: se não existir, taxa = 0.
                   - Com taxa 0, o ticket final é exatamente o valor fixo e a IS final
                     sai 0. A diferença entre o ticket recomendado (<cob>_t) e o valor
@@ -249,7 +249,7 @@ def calcular_is(
     """
     sx = {**SUFIXOS_PADRAO, **(sufixos or {})}
     k_esp = coberturas.index(especial)
-    cvf = {c: {"escala_taxa": 100, **cfg} for c, cfg in (coberturas_valor_fixo or {}).items()}
+    cvf = dict(coberturas_valor_fixo or {})
     fora_da_lista = [c for c in cvf if c not in coberturas]
     if fora_da_lista:
         raise ValueError(f"Coberturas de valor fixo fora da lista `coberturas`: {fora_da_lista}")
@@ -288,9 +288,8 @@ def calcular_is(
     t0 = np.column_stack([coluna(col(c, "t")) for c in coberturas])
     t0 = np.nan_to_num(t0, nan=0.0).clip(min=0)
 
-    # Taxa efetiva (já dividida pela escala; sem coluna de taxa => 0)
-    escala = np.array([cvf[c]["escala_taxa"] if c in cvf else 1.0 for c in coberturas])
-    taxa = np.nan_to_num(np.column_stack([coluna(col(c, "taxa")) for c in coberturas])) / escala
+    # Taxa (já dividida por 100 no pré-processamento; sem coluna de taxa => 0)
+    taxa = np.nan_to_num(np.column_stack([coluna(col(c, "taxa")) for c in coberturas]))
     ismin = np.column_stack([coluna(col(c, "ismin")) for c in coberturas])
     ismax = np.column_stack([coluna(col(c, "ismax")) for c in coberturas])
 
