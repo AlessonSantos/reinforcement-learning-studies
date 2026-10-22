@@ -210,8 +210,9 @@ def calcular_is(
     casas_ticket: int | None = None,
     coberturas_valor_fixo: dict | None = None,
     tol: float = 1e-6,
-    n_iter: int = 200,
+    n_iter: int = 100,
     retornar_todas_faixas: bool = False,
+    linhas_por_bloco: int | None = 300_000,
 ):
     """
     df            dataframe com as linhas já explodidas por faixa.
@@ -242,11 +243,34 @@ def calcular_is(
                     outra, com o valor fixo somado ao ticket.
                   As coberturas daqui também devem estar na lista `coberturas`.
     retornar_todas_faixas  se True, devolve também o resultado de cada faixa (auditoria).
+    n_iter        iterações da bisseção. 100 já chega à precisão máxima do float.
+    linhas_por_bloco  bases grandes são processadas em blocos de ~esse número de
+                  linhas, sempre com todas as faixas de um mesmo pacote x perfil no
+                  mesmo bloco. Limita o uso de memória sem mudar o resultado.
+                  Use None para processar tudo de uma vez.
 
     Retorna o df com uma linha por grupo (a da faixa escolhida) acrescido de
     <cob>_tf (ticket final, pode ter decimais), <cob>_isf (IS final, inteira),
     sobra, dif_arredondamento, distorcao, fator_escala e status.
     """
+    # Bases grandes: processa em blocos de grupos inteiros (resultado idêntico)
+    if linhas_por_bloco and len(df) > linhas_por_bloco:
+        params = dict(coberturas=coberturas, especial=especial, chave_grupo=chave_grupo,
+                      col_agravo1=col_agravo1, col_agravo2=col_agravo2, sufixos=sufixos,
+                      desempate_is=desempate_is, col_ticket_total=col_ticket_total,
+                      casas_ticket=casas_ticket, coberturas_valor_fixo=coberturas_valor_fixo,
+                      tol=tol, n_iter=n_iter, retornar_todas_faixas=retornar_todas_faixas,
+                      linhas_por_bloco=None)
+        g = df.groupby(chave_grupo, dropna=False, sort=False).ngroup().to_numpy()
+        n_blocos = int(np.ceil(len(df) / linhas_por_bloco))
+        bloco_do_grupo = (g * n_blocos) // (g.max() + 1)          # grupos inteiros por bloco
+        saidas = [calcular_is(df[bloco_do_grupo == b], **params) for b in range(n_blocos)
+                  if (bloco_do_grupo == b).any()]
+        if retornar_todas_faixas:
+            return (pd.concat([x[0] for x in saidas], ignore_index=True),
+                    pd.concat([x[1] for x in saidas], ignore_index=True))
+        return pd.concat(saidas, ignore_index=True)
+
     sx = {**SUFIXOS_PADRAO, **(sufixos or {})}
     k_esp = coberturas.index(especial)
     cvf = dict(coberturas_valor_fixo or {})

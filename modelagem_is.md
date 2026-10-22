@@ -393,6 +393,8 @@ resultado = calcular_is(
 - `<cob>_isf`: IS final de cada cobertura (**inteira**, dentro de [IS mín, IS máx]);
 - `sobra`, `dif_arredondamento`, `distorcao`, `fator_escala` (o $s$) e `status`.
 
+**Bases grandes:** a função processa a base em blocos de cerca de 300 mil linhas (parâmetro `linhas_por_bloco`), sempre com todas as faixas de um mesmo pacote × perfil no mesmo bloco. Isso limita o uso de memória sem mudar o resultado. Num teste com 2.752.512 linhas (393.216 pacotes × perfis, 7 faixas e 10 coberturas), a execução levou cerca de 45 s e o pico de memória foi de 2,3 GB, incluindo o próprio dataframe. O parâmetro `n_iter` (iterações da bisseção) tem padrão 100, que já chega à precisão máxima do computador, e não precisa ser alterado.
+
 Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (todas as faixas) com seus `<cob>_tf`, `<cob>_isf`, sobra e distorção, para auditar **por que** uma faixa ganhou.
 
 **Valores de `status`:**
