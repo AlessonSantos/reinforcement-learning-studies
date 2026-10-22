@@ -4,17 +4,20 @@ Distribuição de ticket entre coberturas e cálculo da Importância Segurada (I
 Layout de entrada (linhas JÁ explodidas por faixa da cobertura especial):
 
     colunas_de_perfil..., ticket_total,
-    proporcao_<cob>..., t_<cob>...,            # t_<cob> = ticket recomendado
-    ismin_<cob>..., ismax_<cob>...,            # na especial, variam por faixa
-    taxa_<cob>...,                             # na especial, varia por faixa
+    <cob>_proporcao..., <cob>_t...,            # <cob>_t = ticket recomendado
+    <cob>_ismin..., <cob>_ismax...,            # na especial, variam por faixa
+    <cob>_taxa...,                             # na especial, varia por faixa
     agravo_1, agravo_2                         # agravos da especial
+
+Os sufixos (_t, _ismin, _ismax, _taxa) são configuráveis pelo parâmetro `sufixos`,
+para casar com os nomes reais da base (ex.: "cob_01_is_max_final").
 
 Para as coberturas comuns, ismin/ismax/taxa apenas se repetem entre as linhas de
 faixa de um mesmo pacote x perfil.
 
 Saída: uma linha por pacote x perfil (a da faixa escolhida), com
-    tf_<cob>   ticket final de cada cobertura (pode ter decimais)
-    isf_<cob>  IS final de cada cobertura (sempre inteira, dentro de [ismin, ismax])
+    <cob>_tf   ticket final de cada cobertura (pode ter decimais)
+    <cob>_isf  IS final de cada cobertura (sempre inteira, dentro de [ismin, ismax])
     + sobra, dif_arredondamento, distorcao, fator_escala, status
 
 Modelo (por linha = pacote x perfil x faixa):
@@ -35,13 +38,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-PREFIXOS_PADRAO = {
-    "t": "t_",          # ticket recomendado (entrada)
-    "ismin": "ismin_",
-    "ismax": "ismax_",
-    "taxa": "taxa_",
-    "tf": "tf_",        # ticket final (saída)
-    "isf": "isf_",      # IS final (saída)
+# Nome da coluna = <cob> + sufixo. Ex.: "cob_01" + "_ismax" -> "cob_01_ismax"
+SUFIXOS_PADRAO = {
+    "t": "_t",            # ticket recomendado (entrada)
+    "ismin": "_ismin",    # IS mínima (entrada)
+    "ismax": "_ismax",    # IS máxima (entrada)
+    "taxa": "_taxa",      # taxa (entrada)
+    "tf": "_tf",          # ticket final (saída)
+    "isf": "_isf",        # IS final (saída)
 }
 
 
@@ -119,7 +123,7 @@ ULPS_TOLERANCIA = 64   # tolerância = 64 unidades da última casa binária do t
 
 
 def tickets(is_int, taxa0, fixo0, casas_ticket=None):
-    """Tickets finais por cobertura, exatamente como saem nas colunas tf_."""
+    """Tickets finais por cobertura, exatamente como saem nas colunas <cob>_tf."""
     t = is_int * taxa0 + fixo0
     return np.round(t, casas_ticket) if casas_ticket is not None else t
 
@@ -150,7 +154,7 @@ def arredondar_is(is_cont, lo, hi, taxa, fixo, ativo, alvo, teto, casas_ticket=N
     2) percorre as coberturas da maior para a menor parte fracionária e sobe a
        IS em +1 quando isso aproxima a soma do alvo, sem passar de hi e sem a
        soma passar do teto;
-    3) trava final: recalcula a soma exatamente como as colunas tf_ e, se alguma
+    3) trava final: recalcula a soma exatamente como as colunas <cob>_tf e, se alguma
        linha passar do teto, desce 1 unidade de IS da cobertura de maior taxa
        que ainda pode descer, até caber.
     """
@@ -200,7 +204,7 @@ def calcular_is(
     chave_grupo: list[str],
     col_agravo1: str = "agravo_1",
     col_agravo2: str = "agravo_2",
-    prefixos: dict | None = None,
+    sufixos: dict | None = None,
     desempate_is: str = "menor",
     col_ticket_total: str | None = "ticket_total",
     casas_ticket: int | None = None,
@@ -215,31 +219,45 @@ def calcular_is(
     chave_grupo   colunas que identificam um pacote x perfil (as linhas de faixa
                   de um mesmo grupo compartilham esses valores). Ex.: colunas de
                   perfil + colunas de proporção.
+    sufixos       sufixos dos nomes de coluna (<cob> + sufixo). Só é preciso passar
+                  os que diferem do padrão SUFIXOS_PADRAO. Ex.:
+                  {"t": "_ticket", "ismin": "_is_min_final", "ismax": "_is_max_final"}
     desempate_is  'menor' ou 'maior': se duas faixas empatam em sobra e distorção,
                   fica a que gera a menor (ou maior) IS da especial.
-    col_ticket_total  coluna com o ticket total do pacote. A soma dos tf_ nunca
-                  passa de min(ticket_total, soma dos t_<cob>). Use None para
-                  usar só a soma dos t_<cob>.
-    casas_ticket  se informado (ex.: 2), os tf_ saem arredondados nessas casas e a
+    col_ticket_total  coluna com o ticket total do pacote. A soma dos <cob>_tf nunca
+                  passa de min(ticket_total, soma dos <cob>_t). Use None para
+                  usar só a soma dos <cob>_t.
+    casas_ticket  se informado (ex.: 2), os <cob>_tf saem arredondados nessas casas e a
                   garantia de não passar do ticket total vale já com esse arredondamento.
     retornar_todas_faixas  se True, devolve também o resultado de cada faixa (auditoria).
 
     Retorna o df com uma linha por grupo (a da faixa escolhida) acrescido de
-    tf_<cob> (ticket final, pode ter decimais), isf_<cob> (IS final, inteira),
+    <cob>_tf (ticket final, pode ter decimais), <cob>_isf (IS final, inteira),
     sobra, dif_arredondamento, distorcao, fator_escala e status.
     """
-    px = {**PREFIXOS_PADRAO, **(prefixos or {})}
+    sx = {**SUFIXOS_PADRAO, **(sufixos or {})}
     k_esp = coberturas.index(especial)
+
+    def col(c, tipo):
+        return f"{c}{sx[tipo]}"
+
+    # Confere se todas as colunas de entrada existem (erro claro se algum nome não bate)
+    necessarias = [col(c, t) for t in ("t", "ismin", "ismax", "taxa") for c in coberturas]
+    necessarias += list(chave_grupo) + [col_agravo1, col_agravo2]
+    faltando = [n for n in necessarias if n not in df.columns]
+    if faltando:
+        raise KeyError(f"Colunas não encontradas no dataframe: {faltando}. "
+                       f"Confira os nomes ou ajuste o parâmetro `sufixos`.")
 
     base = df.reset_index(drop=True).copy()
     grupo = base.groupby(chave_grupo, dropna=False, sort=False).ngroup().to_numpy()
 
     # 1) Matrizes (linhas x coberturas)
-    def mat(prefixo):
-        return np.column_stack([base[f"{prefixo}{c}"].to_numpy(float) for c in coberturas])
+    def mat(tipo):
+        return np.column_stack([base[col(c, tipo)].to_numpy(float) for c in coberturas])
 
-    t0 = np.nan_to_num(mat(px["t"]), nan=0.0).clip(min=0)
-    taxa, ismin, ismax = mat(px["taxa"]), mat(px["ismin"]), mat(px["ismax"])
+    t0 = np.nan_to_num(mat("t"), nan=0.0).clip(min=0)
+    taxa, ismin, ismax = mat("taxa"), mat("ismin"), mat("ismax")
     agravos = base[col_agravo1].fillna(0).to_numpy(float) + base[col_agravo2].fillna(0).to_numpy(float)
     ativo = t0 > 0                                   # cobertura recomendada no pacote
     # Elegível: está no pacote E tem taxa > 0 para o perfil. Cobertura com ticket
@@ -278,8 +296,8 @@ def calcular_is(
     t_fin = np.where(elegivel, tickets(is_int, np.nan_to_num(taxa), fixo, casas_ticket), 0.0)
 
     for j, c in enumerate(coberturas):
-        base[f"{px['tf']}{c}"] = t_fin[:, j]
-        base[f"{px['isf']}{c}"] = is_int[:, j].astype("int64")
+        base[col(c, "tf")] = t_fin[:, j]
+        base[col(c, "isf")] = is_int[:, j].astype("int64")
 
     base["sobra"] = r["sobra"]                                   # o que não coube pelos limites
     base["dif_arredondamento"] = t_cont.sum(axis=1) - t_fin.sum(axis=1)   # efeito da IS inteira
@@ -330,7 +348,7 @@ if __name__ == "__main__":
     pd.set_option("display.max_columns", 40)
 
     pacotes = [
-        # pacote, t_cob_01, t_cob_02, t_cob_03, IS máx do Incêndio, IS máx do Roubo
+        # pacote, cob_01_t, cob_02_t, cob_03_t, IS máx do Incêndio, IS máx do Roubo
         ("A", 600, 250, 150, 1_000_000, 50_000),
         ("B", 700, np.nan, 300, 1_000_000, 50_000),   # B não tem danos elétricos
         ("C", 600, 250, 150, 300_000, 20_000),        # C limita IS de incêndio e roubo
@@ -347,15 +365,15 @@ if __name__ == "__main__":
         for inicio, fim, taxa_f, ag1 in faixas:
             linhas.append({
                 "perfil": "P1", "pacote": pac, "ticket_total": total,
-                "proporcao_cob_01": t1 / total,
-                "proporcao_cob_02": (t2 / total) if t2 == t2 else np.nan,
-                "proporcao_cob_03": t3 / total,
-                "t_cob_01": t1, "t_cob_02": t2, "t_cob_03": t3,
+                "cob_01_proporcao": t1 / total,
+                "cob_02_proporcao": (t2 / total) if t2 == t2 else 0.0,
+                "cob_03_proporcao": t3 / total,
+                "cob_01_t": t1, "cob_02_t": t2, "cob_03_t": t3,
                 # especial: limites da faixa ∩ limites da cobertura
-                "ismin_cob_01": max(50_000, inicio), "ismax_cob_01": min(ismax_inc, fim),
-                "ismin_cob_02": 5_000, "ismax_cob_02": 30_000,
-                "ismin_cob_03": 2_000, "ismax_cob_03": ismax_rou,
-                "taxa_cob_01": taxa_f, "taxa_cob_02": 0.005, "taxa_cob_03": 0.01,
+                "cob_01_ismin": max(50_000, inicio), "cob_01_ismax": min(ismax_inc, fim),
+                "cob_02_ismin": 5_000, "cob_02_ismax": 30_000,
+                "cob_03_ismin": 2_000, "cob_03_ismax": ismax_rou,
+                "cob_01_taxa": taxa_f, "cob_02_taxa": 0.005, "cob_03_taxa": 0.01,
                 "agravo_1": ag1, "agravo_2": 30,
             })
     df = pd.DataFrame(linhas)
@@ -366,6 +384,6 @@ if __name__ == "__main__":
         especial="cob_01",
         chave_grupo=["perfil", "pacote"],
     )
-    cols = ["pacote", "ismin_cob_01", "ismax_cob_01", "status", "sobra", "dif_arredondamento",
-            "tf_cob_01", "tf_cob_02", "tf_cob_03", "isf_cob_01", "isf_cob_02", "isf_cob_03"]
+    cols = ["pacote", "cob_01_ismin", "cob_01_ismax", "status", "sobra", "dif_arredondamento",
+            "cob_01_tf", "cob_02_tf", "cob_03_tf", "cob_01_isf", "cob_02_isf", "cob_03_isf"]
     print(res[cols].round(2).to_string(index=False))

@@ -117,7 +117,7 @@ Fixada a faixa $j$:
 
 $$t_k = IS \cdot taxa_j + A_{1j} + A_2 \quad\Longleftrightarrow\quad IS = \frac{t_k - A_{1j} - A_2}{taxa_j}$$
 
-O intervalo de IS permitido nessa faixa é a interseção da faixa com os limites da cobertura. No seu layout, ele já vem pronto nas colunas `ismin_` e `ismax_` da especial, linha a linha:
+O intervalo de IS permitido nessa faixa é a interseção da faixa com os limites da cobertura. No seu layout, ele já vem pronto nas colunas `<cob>_ismin` e `<cob>_ismax` da especial, linha a linha:
 
 $$[IS^{lo}_j,\; IS^{hi}_j] = [\max(IS^{min}, inf_j),\; \min(IS^{max}, sup_j)]$$
 
@@ -260,16 +260,16 @@ Regra obrigatória: a soma dos tickets finais **nunca passa** do ticket total do
 
 $$teto = \min(ticket\_total,\; \textstyle\sum t_{cob})$$
 
-Assim, se a coluna `ticket_total` vier um pouco menor que a soma dos `t_<cob>`, prevalece o menor dos dois.
+Assim, se a coluna `ticket_total` vier um pouco menor que a soma dos `<cob>_t`, prevalece o menor dos dois.
 
 A garantia tem duas camadas:
 
 1. **No ajuste guloso:** a IS só sobe 1 unidade se a nova soma de tickets continuar dentro do teto.
-2. **Trava final:** a soma é recalculada do zero, exatamente como as colunas `tf_` são geradas. Se alguma linha ainda passar do teto, desce 1 unidade de IS da cobertura de maior taxa que ainda pode descer (sem ficar abaixo do mínimo), até caber.
+2. **Trava final:** a soma é recalculada do zero, exatamente como as colunas `<cob>_tf` são geradas. Se alguma linha ainda passar do teto, desce 1 unidade de IS da cobertura de maior taxa que ainda pode descer (sem ficar abaixo do mínimo), até caber.
 
 **Empatar com o teto é permitido.** No pacote B, 700 + 300 = 1.000 exatos. A única folga aceita na comparação é o ruído de representação binária do computador (cerca de 0,00000000001 num ticket de R$ 1.000). Assim, 1000,0000000000002 conta como 1.000, mas qualquer excesso real é bloqueado.
 
-**Tickets em centavos:** com `casas_ticket=2`, os `tf_` saem arredondados em centavos e a garantia vale já com esse arredondamento. Isso importa porque arredondar os tickets *depois* da função, por conta própria, poderia fazer a soma passar do total em 1 centavo.
+**Tickets em centavos:** com `casas_ticket=2`, os `<cob>_tf` saem arredondados em centavos e a garantia vale já com esse arredondamento. Isso importa porque arredondar os tickets *depois* da função, por conta própria, poderia fazer a soma passar do total em 1 centavo.
 
 **Quanto se perde:** o preço da trava é deixar alguns centavos sem distribuir. No teste com 60 mil pacotes, foram no máximo R$ 0,02 por pacote.
 
@@ -288,7 +288,7 @@ A escolha da faixa usa a sobra e a distorção do ótimo contínuo, para que o a
 
 ```
 para cada linha (pacote × perfil × faixa):      ← vetorizado no código
-    1. T = soma dos t_<cob> recomendados
+    1. T = soma dos <cob>_t recomendados
     2. coberturas comuns: L = ismin·taxa,  U = ismax·taxa
     3. especial: L = ismin·taxa + agravo_1 + agravo_2;  U = ismax·taxa + agravo_1 + agravo_2
        se ceil(ismin) > floor(ismax): faixa inválida
@@ -300,7 +300,7 @@ para cada linha (pacote × perfil × faixa):      ← vetorizado no código
        tf = IS_inteira · taxa (+ agravos na especial)
 para cada pacote × perfil:
     7. escolher a linha: válida > não-piso > menor |sobra| > menor distorção > desempate IS
-    8. reportar tf_<cob>, isf_<cob>, sobra, dif_arredondamento, distorção, status
+    8. reportar <cob>_tf, <cob>_isf, sobra, dif_arredondamento, distorção, status
 ```
 
 ---
@@ -313,22 +313,28 @@ Um único dataframe, com **uma linha por pacote × perfil × faixa** da cobertur
 |---|---|
 | colunas de perfil | identificam o perfil do cliente |
 | `ticket_total` | ticket total do pacote |
-| `proporcao_<cob>` | proporção recomendada de cada cobertura (informativa) |
-| `t_<cob>` | ticket recomendado de cada cobertura (NaN/0 = fora do pacote); é o que entra no modelo |
-| `ismin_<cob>`, `ismax_<cob>` | limites de IS. Na **especial**, variam por faixa (limites da faixa ∩ limites da cobertura); nas demais, se repetem |
-| `taxa_<cob>` | taxa. Na **especial**, a da faixa; nas demais, se repete |
+| `<cob>_proporcao` | proporção recomendada de cada cobertura (informativa) |
+| `<cob>_t` | ticket recomendado de cada cobertura (NaN/0 = fora do pacote); é o que entra no modelo |
+| `<cob>_ismin`, `<cob>_ismax` | limites de IS. Na **especial**, variam por faixa (limites da faixa ∩ limites da cobertura); nas demais, se repetem |
+| `<cob>_taxa` | taxa. Na **especial**, a da faixa; nas demais, se repete |
 | `agravo_1` | agravo 1 da especial naquela faixa |
 | `agravo_2` | agravo 2 da especial (depende só do perfil) |
 
 Exemplo do pacote A (3 linhas, uma por faixa; só mudam as colunas da especial `cob_01` e o `agravo_1`):
 
-| perfil | pacote | t_cob_01 | t_cob_02 | t_cob_03 | ismin_cob_01 | ismax_cob_01 | taxa_cob_01 | agravo_1 | agravo_2 | … |
+| perfil | pacote | cob_01_t | cob_02_t | cob_03_t | cob_01_ismin | cob_01_ismax | cob_01_taxa | agravo_1 | agravo_2 | … |
 |---|---|---|---|---|---|---|---|---|---|---|
 | P1 | A | 600 | 250 | 150 | 50.000 | 200.000 | 0,0020 | 20 | 30 | … |
 | P1 | A | 600 | 250 | 150 | 200.001 | 500.000 | 0,0015 | 40 | 30 | … |
 | P1 | A | 600 | 250 | 150 | 500.001 | 1.000.000 | 0,0012 | 60 | 30 | … |
 
-Se os prefixos forem outros, passe `prefixos={"t": "...", "ismin": "...", ...}`.
+Os nomes seguem o padrão `<cob>` + sufixo. Os sufixos padrão são `_t`, `_ismin`, `_ismax`, `_taxa` (entrada) e `_tf`, `_isf` (saída). Se os da sua base forem outros, passe só os que mudam:
+
+```python
+sufixos={"t": "_ticket", "ismin": "_is_min_final", "ismax": "_is_max_final"}
+```
+
+Se algum nome não bater, a função para com um erro listando as colunas que não encontrou.
 
 ---
 
@@ -342,20 +348,21 @@ resultado = calcular_is(
     coberturas=["cob_01", "cob_02", "cob_03", ...],   # todas, incluindo a especial
     especial="cob_01",
     chave_grupo=["regiao", "tipo_imovel", "pacote"],  # identifica um pacote × perfil
+    sufixos={"ismax": "_is_max_final"},               # só os sufixos que diferem do padrão
     desempate_is="menor",                             # ou "maior"
-    col_ticket_total="ticket_total",                  # teto: min(ticket_total, soma dos t_)
+    col_ticket_total="ticket_total",                  # teto: min(ticket_total, soma dos <cob>_t)
     casas_ticket=None,                                # ex.: 2 para tickets em centavos
 )
 ```
 
-**`chave_grupo`** são as colunas que **não mudam** entre as linhas de faixa de um mesmo pacote × perfil, ou seja, as colunas de perfil mais o que identifica o pacote. Se não houver um id de pacote, as colunas `proporcao_<cob>` servem.
+**`chave_grupo`** são as colunas que **não mudam** entre as linhas de faixa de um mesmo pacote × perfil, ou seja, as colunas de perfil mais o que identifica o pacote. Se não houver um id de pacote, as colunas `<cob>_proporcao` servem.
 
 **`resultado`** tem uma linha por pacote × perfil (a linha da faixa escolhida, com todas as colunas originais), acrescida de:
-- `tf_<cob>`: ticket final de cada cobertura (pode ter decimais, recalculado a partir da IS inteira);
-- `isf_<cob>`: IS final de cada cobertura (**inteira**, dentro de [IS mín, IS máx]);
+- `<cob>_tf`: ticket final de cada cobertura (pode ter decimais, recalculado a partir da IS inteira);
+- `<cob>_isf`: IS final de cada cobertura (**inteira**, dentro de [IS mín, IS máx]);
 - `sobra`, `dif_arredondamento`, `distorcao`, `fator_escala` (o $s$) e `status`.
 
-Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (todas as faixas) com seus `tf_`, `isf_`, sobra e distorção, para auditar **por que** uma faixa ganhou.
+Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (todas as faixas) com seus `<cob>_tf`, `<cob>_isf`, sobra e distorção, para auditar **por que** uma faixa ganhou.
 
 **Valores de `status`:**
 
@@ -372,8 +379,8 @@ Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (to
 ## 11. Premissas e pontos de atenção
 
 - **Coberturas fora do pacote ou não elegíveis:**
-  - *Fora do pacote:* `t_<cob>` = 0 (com `ismin`/`ismax` zerados). A cobertura sai do problema, com IS 0 e ticket 0.
-  - *Não elegível ao perfil:* `taxa_<cob>` = 0. A IS e o ticket ficam em 0 mesmo que o pacote recomende um ticket para ela, e esse ticket é redistribuído para as demais coberturas. Na especial, os agravos também não são cobrados.
+  - *Fora do pacote:* `<cob>_t` = 0 (com `ismin`/`ismax` zerados). A cobertura sai do problema, com IS 0 e ticket 0.
+  - *Não elegível ao perfil:* `<cob>_taxa` = 0. A IS e o ticket ficam em 0 mesmo que o pacote recomende um ticket para ela, e esse ticket é redistribuído para as demais coberturas. Na especial, os agravos também não são cobrados.
 - **Limites da especial:** `ismin = max(IS mín, início da faixa)` e `ismax = min(IS máx, fim da faixa)`. Se a especial estiver fora do pacote, tanto faz o resultado dessa conta, porque o ticket 0 já a tira do problema.
 - **Taxa sobre a IS inteira:** a IS inteira usa a taxa da faixa em que cai, e não há cálculo progressivo.
 - **Bordas das faixas:** `ismin` e `ismax` são inclusivos e inteiros: F1 até 75.000 e F2 a partir de 75.001. Se as faixas da sua base vierem encostadas (F1 até 75.000 e F2 a partir de 75.000), a IS de exatamente 75.000 é aceita nas duas, e o critério de escolha decide.
