@@ -157,6 +157,31 @@ O problema não convexo vira cerca de 5 problemas convexos simples, e o melhor d
 
 O critério 5 existe por causa da sobreposição descrita na seção 5.3: duas faixas podem chegar ao **mesmo ticket**, com a mesma distorção, mas com **IS diferentes**. Quem decide qual preferir é a regra de negócio.
 
+### 5.6 Coberturas de valor fixo
+
+Algumas coberturas têm ticket dado por um **valor fixo** (que só varia por perfil, como o agravo 2) mais uma parte proporcional à IS:
+
+$$t = valor\_fixo + \frac{IS \cdot taxa}{100}$$
+
+É a mesma estrutura da especial (parte fixa + IS × taxa), só que sem faixas. Como as demais, essas coberturas têm um **ticket recomendado** (`<cob>_t`, proporção × ticket total), que não precisa ser igual ao valor fixo.
+
+**Sem taxa (situação atual).** A coluna `<cob>_taxa` nem precisa existir; a taxa é considerada 0.
+- O ticket final é **exatamente o valor fixo**, e a IS final sai **0**.
+- A cobertura continua fazendo parte da otimização. A diferença entre o ticket recomendado e o valor fixo é absorvida pelas demais coberturas, com os mesmos critérios de sempre (máximo aproveitamento do ticket e mínima distorção):
+  - recomendado **maior** que o valor fixo: a sobra vai para as outras;
+  - recomendado **menor** que o valor fixo: o que falta é retirado das outras.
+
+Exemplo (pacote A, valor fixo de R$ 50):
+
+| Ticket recomendado | Incêndio | Roubo | Valor fixo | Total |
+|---|---|---|---|---|
+| 80 (sobram 30) | 704 | 176 | 50 | 1.080 |
+| 20 (faltam 30) | 656 | 164 | 50 | 1.020 |
+
+**Com taxa (se for incorporada no futuro).** Basta criar a coluna `<cob>_taxa`. O ticket da cobertura passa a variar entre $valor\_fixo + IS^{min} \cdot taxa/100$ e $valor\_fixo + IS^{max} \cdot taxa/100$, e a IS volta a ser calculada por $IS = (t - valor\_fixo) \cdot 100 / taxa$, inteira e dentro dos limites.
+
+**Fora do pacote:** ticket recomendado e valor fixo zerados. A cobertura fica com IS 0 e ticket 0.
+
 ---
 
 ## 6. Exemplo numérico completo
@@ -319,6 +344,7 @@ Um único dataframe, com **uma linha por pacote × perfil × faixa** da cobertur
 | `<cob>_taxa` | taxa. Na **especial**, a da faixa; nas demais, se repete |
 | `agravo_1` | agravo 1 da especial naquela faixa |
 | `agravo_2` | agravo 2 da especial (depende só do perfil) |
+| coluna de valor fixo | valor fixo das coberturas de valor fixo (seção 5.6). Nelas, `<cob>_taxa` é opcional |
 
 Exemplo do pacote A (3 linhas, uma por faixa; só mudam as colunas da especial `cob_01` e o `agravo_1`):
 
@@ -352,6 +378,9 @@ resultado = calcular_is(
     desempate_is="menor",                             # ou "maior"
     col_ticket_total="ticket_total",                  # teto: min(ticket_total, soma dos <cob>_t)
     casas_ticket=None,                                # ex.: 2 para tickets em centavos
+    coberturas_valor_fixo={                           # seção 5.6
+        "cob_04": {"valor": "cob_04_valor", "escala_taxa": 100},
+    },
 )
 ```
 

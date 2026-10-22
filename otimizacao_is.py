@@ -208,6 +208,7 @@ def calcular_is(
     desempate_is: str = "menor",
     col_ticket_total: str | None = "ticket_total",
     casas_ticket: int | None = None,
+    coberturas_valor_fixo: dict | None = None,
     tol: float = 1e-6,
     n_iter: int = 200,
     retornar_todas_faixas: bool = False,
@@ -229,6 +230,17 @@ def calcular_is(
                   usar só a soma dos <cob>_t.
     casas_ticket  se informado (ex.: 2), os <cob>_tf saem arredondados nessas casas e a
                   garantia de não passar do ticket total vale já com esse arredondamento.
+    coberturas_valor_fixo  coberturas cujo ticket é  valor_fixo + IS * taxa / escala_taxa.
+                  Dicionário {cobertura: {"valor": coluna_do_valor_fixo,
+                                          "escala_taxa": 100}}   (escala padrão: 100).
+                  - A coluna de taxa (<cob>_taxa) é opcional: se não existir, taxa = 0.
+                  - Com taxa 0, o ticket final é exatamente o valor fixo e a IS final
+                    sai 0. A diferença entre o ticket recomendado (<cob>_t) e o valor
+                    fixo é redistribuída entre as demais coberturas (ou retirada
+                    delas, se o valor fixo for maior que o recomendado).
+                  - Com taxa > 0, a cobertura entra na otimização como qualquer
+                    outra, com o valor fixo somado ao ticket.
+                  As coberturas daqui também devem estar na lista `coberturas`.
     retornar_todas_faixas  se True, devolve também o resultado de cada faixa (auditoria).
 
     Retorna o df com uma linha por grupo (a da faixa escolhida) acrescido de
@@ -237,12 +249,19 @@ def calcular_is(
     """
     sx = {**SUFIXOS_PADRAO, **(sufixos or {})}
     k_esp = coberturas.index(especial)
+    cvf = {c: {"escala_taxa": 100, **cfg} for c, cfg in (coberturas_valor_fixo or {}).items()}
+    fora_da_lista = [c for c in cvf if c not in coberturas]
+    if fora_da_lista:
+        raise ValueError(f"Coberturas de valor fixo fora da lista `coberturas`: {fora_da_lista}")
 
     def col(c, tipo):
         return f"{c}{sx[tipo]}"
 
-    # Confere se todas as colunas de entrada existem (erro claro se algum nome não bate)
-    necessarias = [col(c, t) for t in ("t", "ismin", "ismax", "taxa") for c in coberturas]
+    # Confere se todas as colunas de entrada existem (erro claro se algum nome não bate).
+    # Nas coberturas de valor fixo, a taxa é opcional.
+    necessarias = [col(c, t) for t in ("t", "ismin", "ismax") for c in coberturas]
+    necessarias += [col(c, "taxa") for c in coberturas if c not in cvf]
+    necessarias += [cfg["valor"] for cfg in cvf.values()]
     necessarias += list(chave_grupo) + [col_agravo1, col_agravo2]
     faltando = [n for n in necessarias if n not in df.columns]
     if faltando:
@@ -253,28 +272,46 @@ def calcular_is(
     grupo = base.groupby(chave_grupo, dropna=False, sort=False).ngroup().to_numpy()
 
     # 1) Matrizes (linhas x coberturas)
-    def mat(tipo):
-        return np.column_stack([base[col(c, tipo)].to_numpy(float) for c in coberturas])
+    n = len(base)
 
-    t0 = np.nan_to_num(mat("t"), nan=0.0).clip(min=0)
-    taxa, ismin, ismax = mat("taxa"), mat("ismin"), mat("ismax")
-    agravos = base[col_agravo1].fillna(0).to_numpy(float) + base[col_agravo2].fillna(0).to_numpy(float)
-    ativo = t0 > 0                                   # cobertura recomendada no pacote
-    # Elegível: está no pacote E tem taxa > 0 para o perfil. Cobertura com ticket
-    # recomendado mas taxa 0 (não elegível ao perfil) fica com IS 0 e ticket 0, e
-    # o ticket dela é redistribuído para as demais (continua contando em T).
-    elegivel = ativo & (np.nan_to_num(taxa) > 0)
+    def coluna(nome, padrao=0.0):
+        return base[nome].to_numpy(float) if nome in base.columns else np.full(n, padrao)
+
+    # Valor fixo de cada cobertura: agravos na especial, coluna de valor nas de
+    # valor fixo, 0 nas demais
+    fixo = np.zeros((n, len(coberturas)))
+    fixo[:, k_esp] = np.nan_to_num(coluna(col_agravo1)) + np.nan_to_num(coluna(col_agravo2))
+    for c, cfg in cvf.items():
+        fixo[:, coberturas.index(c)] = np.nan_to_num(coluna(cfg["valor"]))
+
+    # Ticket recomendado (proporção x ticket total, enviado pelo negócio)
+    t0 = np.column_stack([coluna(col(c, "t")) for c in coberturas])
+    t0 = np.nan_to_num(t0, nan=0.0).clip(min=0)
+
+    # Taxa efetiva (já dividida pela escala; sem coluna de taxa => 0)
+    escala = np.array([cvf[c]["escala_taxa"] if c in cvf else 1.0 for c in coberturas])
+    taxa = np.nan_to_num(np.column_stack([coluna(col(c, "taxa")) for c in coberturas])) / escala
+    ismin = np.column_stack([coluna(col(c, "ismin")) for c in coberturas])
+    ismax = np.column_stack([coluna(col(c, "ismax")) for c in coberturas])
+
+    ativo = t0 > 0                                    # cobertura recomendada no pacote
+    tem_taxa = taxa > 0
+    eh_valor_fixo = np.array([c in cvf for c in coberturas])[None, :]
+    # Cobertura de valor fixo com taxa 0: ticket = valor fixo, fora da otimização
+    so_fixo = ativo & ~tem_taxa & eh_valor_fixo & (fixo > 0)
+    # Elegível (entra na otimização): no pacote E com taxa > 0. Cobertura comum com
+    # ticket recomendado mas taxa 0 (não elegível ao perfil) fica com IS 0 e ticket 0,
+    # e o ticket dela é redistribuído para as demais (continua contando em T).
+    elegivel = ativo & tem_taxa
+    participa = elegivel | so_fixo                    # tem ticket final > 0
     esp_ativa = elegivel[:, k_esp]
-
-    # Parte fixa do ticket: agravos na especial (se elegível), 0 nas demais
-    fixo = np.zeros_like(t0)
-    fixo[:, k_esp] = np.where(esp_ativa, agravos, 0.0)
+    fixo = np.where(participa, fixo, 0.0)
 
     # 2) Limites de IS já em inteiros e convertidos em limites de ticket
     #    (assim o ótimo contínuo nunca sai do intervalo de IS inteiras válidas)
     lo, hi = limites_inteiros(ismin, ismax)
-    L = np.where(elegivel, np.nan_to_num(lo * taxa + fixo), 0.0)
-    U = np.where(elegivel, np.nan_to_num(hi * taxa + fixo), 0.0)
+    L = np.where(participa, np.nan_to_num(lo * taxa) + fixo, 0.0)   # so_fixo: L = U = valor fixo
+    U = np.where(participa, np.nan_to_num(hi * taxa) + fixo, 0.0)
 
     # Faixa sem nenhuma IS inteira possível (ceil(ismin) > floor(ismax)) é descartada
     faixa_valida = (lo[:, k_esp] <= hi[:, k_esp]) | ~esp_ativa
@@ -290,10 +327,12 @@ def calcular_is(
     teto = t0.sum(axis=1)
     if col_ticket_total and col_ticket_total in base.columns:
         teto = np.fmin(teto, base[col_ticket_total].to_numpy(float))
-    is_int = arredondar_is(is_cont, lo, hi, taxa, fixo, elegivel,
+    is_int = arredondar_is(is_cont, lo, hi, taxa, fixo, participa,
                            alvo=np.minimum(t_cont.sum(axis=1), teto), teto=teto,
                            casas_ticket=casas_ticket)
-    t_fin = np.where(elegivel, tickets(is_int, np.nan_to_num(taxa), fixo, casas_ticket), 0.0)
+    # Valor fixo com taxa 0: a IS não muda o ticket; sai 0 (o ticket é o valor fixo)
+    is_int = np.where(so_fixo, 0.0, is_int)
+    t_fin = np.where(participa, tickets(is_int, taxa, fixo, casas_ticket), 0.0)
 
     for j, c in enumerate(coberturas):
         base[col(c, "tf")] = t_fin[:, j]
