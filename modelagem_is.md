@@ -371,6 +371,10 @@ Com `retornar_todas_faixas=True`, a função devolve também todas as linhas (to
 
 ## 11. Premissas e pontos de atenção
 
+- **Coberturas fora do pacote ou não elegíveis:**
+  - *Fora do pacote:* `t_<cob>` = 0 (com `ismin`/`ismax` zerados). A cobertura sai do problema, com IS 0 e ticket 0.
+  - *Não elegível ao perfil:* `taxa_<cob>` = 0. A IS e o ticket ficam em 0 mesmo que o pacote recomende um ticket para ela, e esse ticket é redistribuído para as demais coberturas. Na especial, os agravos também não são cobrados.
+- **Limites da especial:** `ismin = max(IS mín, início da faixa)` e `ismax = min(IS máx, fim da faixa)`. Se a especial estiver fora do pacote, tanto faz o resultado dessa conta, porque o ticket 0 já a tira do problema.
 - **Taxa sobre a IS inteira:** a IS inteira usa a taxa da faixa em que cai, e não há cálculo progressivo.
 - **Bordas das faixas:** `ismin` e `ismax` são inclusivos e inteiros: F1 até 75.000 e F2 a partir de 75.001. Se as faixas da sua base vierem encostadas (F1 até 75.000 e F2 a partir de 75.000), a IS de exatamente 75.000 é aceita nas duas, e o critério de escolha decide.
 - **Arredondamento:** a IS sai inteira (seção 7). Se no futuro for preciso arredondar para múltiplos maiores (por exemplo, R$ 1.000), a mesma lógica vale trocando 1 pelo passo desejado no ceil/floor e no ajuste.

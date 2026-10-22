@@ -241,18 +241,22 @@ def calcular_is(
     t0 = np.nan_to_num(mat(px["t"]), nan=0.0).clip(min=0)
     taxa, ismin, ismax = mat(px["taxa"]), mat(px["ismin"]), mat(px["ismax"])
     agravos = base[col_agravo1].fillna(0).to_numpy(float) + base[col_agravo2].fillna(0).to_numpy(float)
-    ativo = t0 > 0
-    esp_ativa = ativo[:, k_esp]
+    ativo = t0 > 0                                   # cobertura recomendada no pacote
+    # Elegível: está no pacote E tem taxa > 0 para o perfil. Cobertura com ticket
+    # recomendado mas taxa 0 (não elegível ao perfil) fica com IS 0 e ticket 0, e
+    # o ticket dela é redistribuído para as demais (continua contando em T).
+    elegivel = ativo & (np.nan_to_num(taxa) > 0)
+    esp_ativa = elegivel[:, k_esp]
 
-    # Parte fixa do ticket: agravos na especial, 0 nas demais
+    # Parte fixa do ticket: agravos na especial (se elegível), 0 nas demais
     fixo = np.zeros_like(t0)
-    fixo[:, k_esp] = agravos
+    fixo[:, k_esp] = np.where(esp_ativa, agravos, 0.0)
 
     # 2) Limites de IS já em inteiros e convertidos em limites de ticket
     #    (assim o ótimo contínuo nunca sai do intervalo de IS inteiras válidas)
     lo, hi = limites_inteiros(ismin, ismax)
-    L = np.where(ativo, np.nan_to_num(lo * taxa + fixo), 0.0)
-    U = np.where(ativo, np.nan_to_num(hi * taxa + fixo), 0.0)
+    L = np.where(elegivel, np.nan_to_num(lo * taxa + fixo), 0.0)
+    U = np.where(elegivel, np.nan_to_num(hi * taxa + fixo), 0.0)
 
     # Faixa sem nenhuma IS inteira possível (ceil(ismin) > floor(ismax)) é descartada
     faixa_valida = (lo[:, k_esp] <= hi[:, k_esp]) | ~esp_ativa
@@ -264,14 +268,14 @@ def calcular_is(
 
     # 4) Ticket contínuo -> IS contínua -> IS inteira -> ticket final
     with np.errstate(divide="ignore", invalid="ignore"):
-        is_cont = np.where(ativo, (t_cont - fixo) / taxa, 0.0)
+        is_cont = np.where(elegivel, (t_cont - fixo) / taxa, 0.0)
     teto = t0.sum(axis=1)
     if col_ticket_total and col_ticket_total in base.columns:
         teto = np.fmin(teto, base[col_ticket_total].to_numpy(float))
-    is_int = arredondar_is(is_cont, lo, hi, taxa, fixo, ativo,
+    is_int = arredondar_is(is_cont, lo, hi, taxa, fixo, elegivel,
                            alvo=np.minimum(t_cont.sum(axis=1), teto), teto=teto,
                            casas_ticket=casas_ticket)
-    t_fin = np.where(ativo, tickets(is_int, np.nan_to_num(taxa), fixo, casas_ticket), 0.0)
+    t_fin = np.where(elegivel, tickets(is_int, np.nan_to_num(taxa), fixo, casas_ticket), 0.0)
 
     for j, c in enumerate(coberturas):
         base[f"{px['tf']}{c}"] = t_fin[:, j]
@@ -284,7 +288,7 @@ def calcular_is(
     base["fator_escala"] = r["s"]
 
     # Checagem de segurança: IS inteira dentro de [ismin, ismax] originais
-    fora = ativo & ((is_int < np.round(ismin, CASAS_LIMPEZA)) | (is_int > np.round(ismax, CASAS_LIMPEZA)))
+    fora = elegivel & ((is_int < np.round(ismin, CASAS_LIMPEZA)) | (is_int > np.round(ismax, CASAS_LIMPEZA)))
     fora_limites = fora.any(axis=1) & faixa_valida
     # Checagem de segurança: soma dos tickets finais acima do teto
     # (só é possível se nem as IS mínimas cabem no ticket total)
