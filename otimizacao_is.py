@@ -16,8 +16,11 @@ Para as coberturas comuns, ismin/ismax/taxa apenas se repetem entre as linhas de
 faixa de um mesmo pacote x perfil.
 
 Saída: uma linha por pacote x perfil (a da faixa escolhida), com
-    <cob>_tf   ticket final de cada cobertura (pode ter decimais)
-    <cob>_isf  IS final de cada cobertura (sempre inteira, dentro de [ismin, ismax])
+    <cob>_tf          ticket final de cada cobertura (pode ter decimais)
+    <cob>_isf         IS final de cada cobertura (sempre inteira, dentro de [ismin, ismax])
+    <cob>_dif_ticket  ticket recomendado - ticket final (> 0: a cobertura cedeu ticket;
+                      < 0: recebeu ticket de outras)
+    <cob>_dif_prop    |proporção recomendada - proporção final|
     + sobra, dif_arredondamento, distorcao, fator_escala, status
 
 Modelo (por linha = pacote x perfil x faixa):
@@ -46,13 +49,15 @@ SUFIXOS_PADRAO = {
     "taxa": "_taxa",      # taxa (entrada)
     "tf": "_tf",          # ticket final (saída)
     "isf": "_isf",        # IS final (saída)
+    "dif_ticket": "_dif_ticket",  # ticket recomendado - ticket final (saída)
+    "dif_prop": "_dif_prop",      # |proporção recomendada - proporção final| (saída)
 }
 
 
 # ---------------------------------------------------------------------------
 # Núcleo: resolve o problema para N linhas de uma vez (vetorizado)
 # ---------------------------------------------------------------------------
-def resolver_distribuicao(t0: np.ndarray, L: np.ndarray, U: np.ndarray, n_iter: int = 200):
+def resolver_distribuicao(t0: np.ndarray, L: np.ndarray, U: np.ndarray, n_iter: int = 100):
     """
     t0, L, U: matrizes (n_linhas x n_coberturas). Coberturas inativas devem ter
     t0 = L = U = 0.
@@ -251,6 +256,8 @@ def calcular_is(
 
     Retorna o df com uma linha por grupo (a da faixa escolhida) acrescido de
     <cob>_tf (ticket final, pode ter decimais), <cob>_isf (IS final, inteira),
+    <cob>_dif_ticket (ticket recomendado - ticket final),
+    <cob>_dif_prop (|proporção recomendada - proporção final|),
     sobra, dif_arredondamento, distorcao, fator_escala e status.
     """
     # Bases grandes: processa em blocos de grupos inteiros (resultado idêntico)
@@ -357,9 +364,18 @@ def calcular_is(
     is_int = np.where(so_fixo, 0.0, is_int)
     t_fin = np.where(participa, tickets(is_int, taxa, fixo, casas_ticket), 0.0)
 
+    # Proporções: recomendada = t0 / soma(t0); final = tf / soma(tf)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        soma_t0 = t0.sum(axis=1, keepdims=True)
+        soma_tf = t_fin.sum(axis=1, keepdims=True)
+        prop_rec = np.where(soma_t0 > 0, t0 / soma_t0, 0.0)
+        prop_fin = np.where(soma_tf > 0, t_fin / soma_tf, 0.0)
+
     for j, c in enumerate(coberturas):
         base[col(c, "tf")] = t_fin[:, j]
         base[col(c, "isf")] = is_int[:, j].astype("int64")
+        base[col(c, "dif_ticket")] = t0[:, j] - t_fin[:, j]
+        base[col(c, "dif_prop")] = np.abs(prop_rec[:, j] - prop_fin[:, j])
 
     base["sobra"] = r["sobra"]                                   # o que não coube pelos limites
     base["dif_arredondamento"] = t_cont.sum(axis=1) - t_fin.sum(axis=1)   # efeito da IS inteira
@@ -446,6 +462,9 @@ if __name__ == "__main__":
         especial="cob_01",
         chave_grupo=["perfil", "pacote"],
     )
-    cols = ["pacote", "cob_01_ismin", "cob_01_ismax", "status", "sobra", "dif_arredondamento",
+    cols = ["pacote", "status", "sobra",
             "cob_01_tf", "cob_02_tf", "cob_03_tf", "cob_01_isf", "cob_02_isf", "cob_03_isf"]
     print(res[cols].round(2).to_string(index=False))
+    print()
+    cols = ["pacote"] + [f"cob_0{i}_dif_ticket" for i in (1, 2, 3)] + [f"cob_0{i}_dif_prop" for i in (1, 2, 3)]
+    print(res[cols].round(4).to_string(index=False))

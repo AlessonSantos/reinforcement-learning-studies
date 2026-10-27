@@ -80,7 +80,7 @@ A função $f(s) = \sum_i \text{clip}(s \cdot t^0_i, L_i, U_i)$ é **não decres
 
 - Em $s = 0$, todos vão para $L_i$.
 - Em $s$ grande, todos vão para $U_i$.
-- Faz-se a busca no meio, cerca de 200 iterações. No código isso é vetorizado e todas as linhas são resolvidas de uma vez.
+- Faz-se a busca no meio, 100 iterações (parâmetro `n_iter`). No código isso é vetorizado e todas as linhas são resolvidas de uma vez.
 
 Como ler o resultado:
 
@@ -227,6 +227,14 @@ Em F2, Incêndio e Roubo foram escalados pelo mesmo fator: $s = 850/750 \approx 
 - **Incêndio:** $(680 - 40 - 30)/0{,}0015 = 406.666{,}67$, que vira **R$ 406.666** (cai de fato em F2 ✔). Arredondar para 406.667 daria ticket de 680,0005, e o total passaria de 1.000 (seção 7.3). O ticket final é recalculado a partir da IS inteira: $406.666 \times 0{,}0015 + 70 = 679{,}999$.
 - **Danos Elétricos:** $150/0{,}005 =$ **R$ 30.000**
 - **Roubo:** $170/0{,}01 =$ **R$ 17.000**
+
+**Diferenças por cobertura** (colunas `<cob>_dif_ticket` e `<cob>_dif_prop`):
+
+| Cobertura | Ticket recomendado | Ticket final | `dif_ticket` | Proporção recomendada | Proporção final | `dif_prop` |
+|---|---|---|---|---|---|---|
+| Incêndio | 600 | 680 | −80 (recebeu) | 60% | 68% | 0,08 |
+| Danos Elétricos | 250 | 150 | +100 (cedeu) | 25% | 15% | 0,10 |
+| Roubo | 150 | 170 | −20 (recebeu) | 15% | 17% | 0,02 |
 
 ### 6.2 Pacote B: cobertura fora do pacote e empate entre faixas
 
@@ -391,7 +399,11 @@ resultado = calcular_is(
 **`resultado`** tem uma linha por pacote × perfil (a linha da faixa escolhida, com todas as colunas originais), acrescida de:
 - `<cob>_tf`: ticket final de cada cobertura (pode ter decimais, recalculado a partir da IS inteira);
 - `<cob>_isf`: IS final de cada cobertura (**inteira**, dentro de [IS mín, IS máx]);
-- `sobra`, `dif_arredondamento`, `distorcao`, `fator_escala` (o $s$) e `status`.
+- `<cob>_dif_ticket`: ticket recomendado − ticket final. Positivo: a cobertura **cedeu** ticket (por exemplo, travou na IS máxima). Negativo: **recebeu** ticket de outras;
+- `<cob>_dif_prop`: diferença absoluta entre a proporção recomendada ($t^0_i / \sum t^0$) e a proporção final ($tf_i / \sum tf$);
+- `sobra`, `dif_arredondamento`, `distorcao`, `fator_escala` (o $s$; sem significado quando há sobra, porque todas as coberturas estão travadas no máximo) e `status`.
+
+A soma de `<cob>_dif_ticket` de todas as coberturas é igual a `sobra` + `dif_arredondamento`: o que não foi redistribuído entre as coberturas é justamente o que ficou sem distribuir.
 
 **Bases grandes:** a função processa a base em blocos de cerca de 300 mil linhas (parâmetro `linhas_por_bloco`), sempre com todas as faixas de um mesmo pacote × perfil no mesmo bloco. Isso limita o uso de memória sem mudar o resultado. Num teste com 2.752.512 linhas (393.216 pacotes × perfis, 7 faixas e 10 coberturas), a execução levou cerca de 45 s e o pico de memória foi de 2,3 GB, incluindo o próprio dataframe. O parâmetro `n_iter` (iterações da bisseção) tem padrão 100, que já chega à precisão máxima do computador, e não precisa ser alterado.
 
